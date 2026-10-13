@@ -1,0 +1,38 @@
+{
+  "compilerOptions": {
+    "target": "ES2017",
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "react-jsx",
+    "incremental": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"],
+      "@subtubes/report-ui": ["./report-ui/src/index.ts"],
+      "@subtubes/report-ui/styles.css": ["./report-ui/src/styles.css"],
+      "@subtubes/report-ui/fixtures": ["./report-ui/src/fixtures.ts"],
+      "@subtubes/report-ui/model/*": ["./report-ui/src/model/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
+  "exclude": ["node_modules", "report-ui/src/**/*.test.ts*", "report-ui/src/*-test-utils.ts"]
+}

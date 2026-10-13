@@ -1,0 +1,14 @@
+{
+	"mcpServers": {
+		"diff-engine": {
+			"type": "stdio",
+			"command": "/Applications/Subtubes IRE.app/Contents/MacOS/diff-engine-node",
+			"args": [
+				"/Applications/Subtubes IRE.app/Contents/Resources/mcp/dist/server.mjs"
+			],
+			"tools": [
+				"*"
+			]
+		}
+	}
+}

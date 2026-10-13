@@ -1,0 +1,23 @@
+{
+  "name": "@subtubes/report-ui",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Subtubes IRE report components: Summary, QA, Design and Changes, as a React library. Read only unless a host connects the write services.",
+  "type": "module",
+  "sideEffects": ["*.css"],
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./fixtures": "./src/fixtures.ts",
+    "./model/*": "./src/model/*.ts"
+  },
+  "peerDependencies": {
+    "highlight.js": "^11.11.1",
+    "lowlight": "^3.3.0",
+    "lucide-react": "^1.55.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-markdown": "^10.1.0",
+    "zod": "^4.0.0"
+  }
+}

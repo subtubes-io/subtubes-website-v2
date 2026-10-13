@@ -1,0 +1,23 @@
+name: subtubes
+
+services:
+  postgres:
+    image: postgres:17
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: subtubes
+      POSTGRES_PASSWORD: subtubes
+      POSTGRES_DB: subtubes
+    ports:
+      # 5455 on the host so it does not collide with other local Postgres containers.
+      - "127.0.0.1:5455:5432"
+    volumes:
+      - subtubes-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U subtubes -d subtubes"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  subtubes-postgres:
