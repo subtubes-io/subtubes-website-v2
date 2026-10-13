@@ -1,12 +1,12 @@
 import { auth } from "@/lib/auth";
+import { isTrustedAuthOrigin } from "@/lib/auth-origins";
 import { db } from "@/lib/db/client";
 import { parseProfileLinks } from "@/lib/profile-links";
 
 export async function PUT(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return Response.json({ error: "Sign in to edit your profile links." }, { status: 401 });
-  const origin = process.env.BETTER_AUTH_URL;
-  if (!origin || request.headers.get("origin") !== new URL(origin).origin) {
+  if (!isTrustedAuthOrigin(request.headers.get("origin"))) {
     return Response.json({ error: "Save profile links from this website." }, { status: 403 });
   }
   if (!request.headers.get("content-type")?.includes("application/json")) {

@@ -21,7 +21,8 @@ npm run dev                     # http://localhost:3000
 
 ### Current production deployment
 
-- App: <https://subtubes-remote.vercel.app>
+- App: <https://subtubes.com> (also <https://www.subtubes.com>)
+- Vercel deployment alias: <https://subtubes-remote.vercel.app>
 - Vercel project: <https://vercel.com/iosubtubes-projects/subtubes-remote>
 - Supabase project: <https://supabase.com/dashboard/project/riuqrdtnpipwxgojmbsl>
 - Database and function region: US West (Supabase `us-west-2`, Vercel `sfo1`).
@@ -31,8 +32,12 @@ Production is deployed from this checkout using the Vercel CLI. To redeploy
 after validating changes, run `vercel deploy --prod`. The ignored `.vercel`
 directory links this checkout to the production project. Git-based automatic
 deployments are not connected yet. Production secrets live in Vercel environment
-settings, not in committed files. GitHub OAuth is not configured; email and
-username/password sign-in are available.
+settings, not in committed files. The canonical `BETTER_AUTH_URL` is
+`https://subtubes.com`; `BETTER_AUTH_TRUSTED_ORIGINS` explicitly allows
+`https://www.subtubes.com` and `https://subtubes-remote.vercel.app`.
+Authentication and profile mutations use the same exact-origin allowlist.
+GitHub OAuth must use `https://subtubes.com/api/auth/callback/github` as its
+registered callback URL.
 
 Supabase hosts PostgreSQL only. **Better Auth remains responsible for sign-in,
 sessions, organizations, and desktop device authorization.** No Supabase Auth
@@ -98,6 +103,7 @@ Set these environment variables for **Production** before deploying:
 | `DATABASE_SSL_CA` | Full PEM root certificate from Supabase when required by the endpoint |
 | `BETTER_AUTH_SECRET` | A new production secret generated with `openssl rand -base64 32` |
 | `BETTER_AUTH_URL` | The canonical production origin, e.g. `https://your-app.vercel.app` or your custom domain |
+| `BETTER_AUTH_TRUSTED_ORIGINS` | Optional comma-separated exact additional app origins, e.g. `https://www.subtubes.com`; no wildcards, paths, or trailing slashes |
 | `BLOB_READ_WRITE_TOKEN` | A production Vercel Blob store token for avatar uploads |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional production GitHub OAuth app credentials |
 

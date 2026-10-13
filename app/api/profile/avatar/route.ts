@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { del, put } from "@vercel/blob";
 import { auth } from "@/lib/auth";
+import { isTrustedAuthOrigin } from "@/lib/auth-origins";
 import { MAX_AVATAR_BYTES, prepareAvatar } from "@/lib/avatar-image";
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return Response.json({ error: "Sign in to upload an avatar." }, { status: 401 });
-  const origin = process.env.BETTER_AUTH_URL;
-  if (!origin || request.headers.get("origin") !== new URL(origin).origin) {
+  if (!isTrustedAuthOrigin(request.headers.get("origin"))) {
     return Response.json({ error: "This upload must come from this website." }, { status: 403 });
   }
   if (!request.headers.get("content-type")?.startsWith("multipart/form-data;")) {

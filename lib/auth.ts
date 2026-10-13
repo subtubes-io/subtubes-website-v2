@@ -5,6 +5,7 @@ import { nextCookies } from "better-auth/next-js";
 import { bearer, deviceAuthorization, organization, username } from "better-auth/plugins";
 import { PostgresDialect } from "kysely";
 import { db, pool } from "@/lib/db/client";
+import { getAuthOrigins } from "@/lib/auth-origins";
 import { isValidOrganizationSlug, normalizeOrganizationSlug } from "@/lib/organization-slug";
 
 function validateOrganizationSlug(slug: string | undefined) {
@@ -154,6 +155,7 @@ export const githubConfigured = Boolean(process.env.GITHUB_CLIENT_ID && process.
 export const auth = betterAuth({
   appName: "subtubes",
   baseURL: process.env.BETTER_AUTH_URL,
+  trustedOrigins: getAuthOrigins(),
   secret: process.env.BETTER_AUTH_SECRET,
   database: {
     dialect: new PostgresDialect({ pool }),
