@@ -318,10 +318,12 @@ local sync checkpoints are **not implemented by this website**.
 
 **Breaking change:** the old `PUT /designs/:designId` upload is removed. Clients
 must use `POST /designs/:designId/versions` and `PUT /designs/:designId/preferred`.
-This is a backend change awaiting a coordinated migration/deployment, not a claim
-that the currently deployed cloud already uses this contract.
+The versioning migration and backend are deployed on <https://subtubes.com>.
+Desktop clients still need to implement this contract and their local
+interface/checkpoint store. Production push, competing-version retention,
+election, pull, history, and retry behavior were verified with temporary data.
 
-Before deploying the versioning change:
+When applying the versioning change to another environment:
 
 1. Back up the database and test the migration on a development copy.
 2. Pause diagram writes and coordinate the desktop API cutover. The migration

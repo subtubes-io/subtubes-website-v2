@@ -24,7 +24,7 @@ It does not need to wait for the proposed `/api/v1` API.
 | `/api/v1/me` convenience response with membership roles | Implemented |
 | Personal default organization (auto-created on registration, strictly private) | Implemented |
 | Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
-| Immutable diagram versions, cloud discovery/pull and preferred-version election | Implemented backend; requires migration/deployment and desktop integration |
+| Immutable diagram versions, cloud discovery/pull and preferred-version election | Deployed on https://subtubes.com; desktop integration still required |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -414,8 +414,9 @@ Account/organization deletion still removes their data.
 
 This contract **replaces** the old single-document `PUT /designs/:designId`
 (now unsupported / HTTP 405). It does not change report/snapshot uploads.
-Backend routes are implemented in this checkout; production deployment and the
-desktop interface/checkpoint store must be coordinated separately.
+Backend routes and the versioning migration are deployed on
+<https://subtubes.com>. The desktop interface/checkpoint store still needs to
+implement this contract; deployment does not add those desktop controls.
 
 #### Three different version concepts
 
