@@ -8,18 +8,20 @@ import {
   PostgresDialect,
 } from "kysely";
 import { Pool } from "pg";
+import { databaseConnectionConfig } from "../lib/db/connection";
 
 loadEnvConfig(process.cwd());
 
-const connectionString = process.env.DATABASE_URL;
+const connectionString =
+  process.env.DATABASE_MIGRATION_URL || process.env.DATABASE_URL;
 
 if (!connectionString) {
-  throw new Error("DATABASE_URL is not set");
+  throw new Error("DATABASE_MIGRATION_URL or DATABASE_URL must be set");
 }
 
 const db = new Kysely<unknown>({
   dialect: new PostgresDialect({
-    pool: new Pool({ connectionString }),
+    pool: new Pool({ ...databaseConnectionConfig(connectionString), max: 1 }),
   }),
 });
 

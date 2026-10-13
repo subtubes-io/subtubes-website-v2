@@ -1,5 +1,6 @@
 import { Kysely, PostgresDialect } from "kysely";
 import { Pool } from "pg";
+import { databaseConnectionConfig } from "./connection";
 import type { Database } from "./types";
 
 const connectionString = process.env.DATABASE_URL;
@@ -13,7 +14,12 @@ const globalForDb = globalThis as typeof globalThis & {
   subtubesDb?: Kysely<Database>;
 };
 
-export const pool = globalForDb.subtubesPool ?? new Pool({ connectionString });
+export const pool =
+  globalForDb.subtubesPool ??
+  new Pool({
+    ...databaseConnectionConfig(connectionString),
+    max: process.env.VERCEL === "1" ? 1 : 10,
+  });
 export const db =
   globalForDb.subtubesDb ??
   new Kysely<Database>({

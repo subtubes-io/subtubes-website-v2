@@ -17,6 +17,123 @@ npm run dev                     # http://localhost:3000
 - Create a GitHub OAuth app at <https://github.com/settings/developers> with homepage `http://localhost:3000` and callback `http://localhost:3000/api/auth/callback/github`, then put its client ID and secret in `.env.local`.
 - `npm run db:down` stops Postgres; the data stays in the `subtubes-postgres` Docker volume.
 
+## Deploy to Vercel with Supabase PostgreSQL
+
+### Current production deployment
+
+- App: <https://subtubes-remote.vercel.app>
+- Vercel project: <https://vercel.com/iosubtubes-projects/subtubes-remote>
+- Supabase project: <https://supabase.com/dashboard/project/riuqrdtnpipwxgojmbsl>
+- Database and function region: US West (Supabase `us-west-2`, Vercel `sfo1`).
+- Dedicated production Blob store: `subtubes-remote-production`.
+
+Production is deployed from this checkout using the Vercel CLI. To redeploy
+after validating changes, run `vercel deploy --prod`. The ignored `.vercel`
+directory links this checkout to the production project. Git-based automatic
+deployments are not connected yet. Production secrets live in Vercel environment
+settings, not in committed files. GitHub OAuth is not configured; email and
+username/password sign-in are available.
+
+Supabase hosts PostgreSQL only. **Better Auth remains responsible for sign-in,
+sessions, organizations, and desktop device authorization.** No Supabase Auth
+configuration, Supabase SDK, or Supabase API keys are needed. Local development
+can continue using Docker.
+
+### 1. Create the production database
+
+1. Create a Supabase project in a region near your Vercel functions.
+2. **Disable the Data API** in the Supabase project's API settings before applying
+   migrations. The app's tables are created in `public`, including account and
+   session data; they must not be exposed through Supabase REST/GraphQL.
+   Better Auth permissions do not protect the Supabase Data API.
+3. In **Connect**, copy the **transaction pooler** connection string (port `6543`)
+   for the Vercel `DATABASE_URL`. Copy a **direct connection** string for
+   migrations. If your migration machine cannot reach the direct IPv6 endpoint,
+   use the **session pooler** (port `5432`) instead.
+4. Replace the password placeholder with your database password, percent-encoding
+   reserved characters in the password. Copy the exact host and username from
+   the dashboard; the pooler username differs from the direct username.
+5. Require TLS and certificate verification on both hosted connections by adding
+   `sslmode=verify-full` to the URL (`?sslmode=verify-full`, or
+   `&sslmode=verify-full` if it already has query parameters). If the endpoint
+   needs a custom CA, obtain the database certificate from Supabase and set
+   `DATABASE_SSL_CA` to its full PEM content on Vercel and on the migration
+   machine. This requires `sslmode=verify-full` and cannot be combined with other
+   URL SSL options. Do not disable certificate verification.
+
+The app shares a module-level `pg` pool between Kysely and Better Auth, limited
+to one connection per Vercel instance (`VERCEL=1`). Kysely's queries do not use
+named prepared statements, so they work with transaction pooling.
+
+### 2. Apply migrations before deploying
+
+From your local checkout, run the existing migrations against the new database:
+
+```bash
+DATABASE_MIGRATION_URL='YOUR_SUPABASE_DIRECT_OR_SESSION_URL_WITH_TLS' npm run db:migrate
+```
+
+Replace the placeholder privately; do not commit the URL or paste it into chat.
+Alternatively, set `DATABASE_MIGRATION_URL` in your ignored `.env.local` and run
+`npm run db:migrate`. It takes precedence over `DATABASE_URL` for migrations
+only; leaving it empty preserves the local Docker workflow.
+The migrations create a fresh schema; they do not copy existing local data.
+
+Run migrations as a separate, controlled deployment step, **not** as part of
+`npm run build`. Preview builds must never migrate the production database.
+Never run `db:reset` or fixture-creating test suites against production.
+
+### 3. Import the app into Vercel
+
+Import the GitHub repository into Vercel, using the repository root and the
+**Next.js** framework preset. Keep the default install/build settings
+(`npm run build`); no `vercel.json` or Docker deployment is required.
+Choose a functions region near Supabase in the Vercel project settings.
+
+Set these environment variables for **Production** before deploying:
+
+| Variable | Value |
+|---|---|
+| `DATABASE_URL` | Supabase transaction pooler URL with TLS, from step 1 |
+| `DATABASE_SSL_CA` | Full PEM root certificate from Supabase when required by the endpoint |
+| `BETTER_AUTH_SECRET` | A new production secret generated with `openssl rand -base64 32` |
+| `BETTER_AUTH_URL` | The canonical production origin, e.g. `https://your-app.vercel.app` or your custom domain |
+| `BLOB_READ_WRITE_TOKEN` | A production Vercel Blob store token for avatar uploads |
+| `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional production GitHub OAuth app credentials |
+
+Keep these server-only (no `NEXT_PUBLIC_` prefix). `DATABASE_MIGRATION_URL` is
+only needed by the machine or CI job running migrations, not Vercel functions.
+For GitHub login, register
+`https://YOUR_PRODUCTION_HOST/api/auth/callback/github` as the production OAuth
+callback. Email/username-and-password sign-in works without GitHub credentials.
+Use a separate GitHub OAuth app for local development.
+
+Provision a public Vercel Blob store for production and connect it to the
+project. Without its token, avatar uploads return an explicit configuration
+error; database-backed account features do not need Blob.
+
+Use a **separate Supabase project/database and Blob store for Preview**, with
+separate secrets and migrations. For a login-enabled preview, use a stable
+preview domain and set its own `BETTER_AUTH_URL` and OAuth callback. Do not point
+previews at production or add wildcard auth origins just to support changing
+preview URLs.
+
+### 4. Verify the deployment
+
+After deploying (and after any environment-variable change, redeploy):
+
+- Open `/api/health` and check for `status: "ok"`. This checks the app, **not**
+  database connectivity.
+- Create a test account, sign out, and sign back in. Confirm that the personal
+  workspace loads; this exercises the database and Better Auth.
+- Verify GitHub sign-in if configured, and avatar upload if Blob is configured.
+- Point the desktop client at the production origin and verify device login.
+- If you attach a custom domain later, update `BETTER_AUTH_URL`, the GitHub
+  callback, and the desktop API origin together, then redeploy.
+
+Reference: [Supabase connection modes](https://supabase.com/docs/guides/database/connecting-to-postgres)
+and [Data API security](https://supabase.com/docs/guides/api/securing-your-api).
+
 ## What is here
 
 | Path | Purpose |
@@ -184,7 +301,9 @@ Database types live in `lib/db/types.ts`; query the database through the Kysely 
 
 Add a timestamp-prefixed TypeScript migration in `migrations/`, exporting `up` and `down` functions that accept `Kysely<unknown>`, then run `npm run db:migrate`. Migrations are applied in alphabetical order by Kysely's migrator.
 
-The initial Kysely migration creates the database schema from scratch. Since this app is currently local-only, `npm run db:reset` is the way to replace the prior Drizzle-managed local database with the Kysely schema.
+The initial Kysely migration creates the database schema from scratch.
+`npm run db:reset` replaces the prior Drizzle-managed **local Docker database**
+with the Kysely schema; it is not a production migration or reset workflow.
 
 ## Notes
 
