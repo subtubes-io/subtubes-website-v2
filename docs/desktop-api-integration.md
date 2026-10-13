@@ -24,6 +24,7 @@ It does not need to wait for the proposed `/api/v1` API.
 | `/api/v1/me` convenience response with membership roles | Implemented |
 | Personal default organization (auto-created on registration, strictly private) | Implemented |
 | Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
+| Immutable diagram versions, cloud discovery/pull and preferred-version election | Implemented backend; requires migration/deployment and desktop integration |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -37,7 +38,7 @@ Derive API URLs from that origin:
 | Profile | Website origin | Auth base | Future report API base |
 | --- | --- | --- | --- |
 | Local | `http://localhost:3000` | `/api/auth` | `/api/v1` |
-| Production | Confirmed production HTTPS origin, not yet supplied | `/api/auth` | `/api/v1` |
+| Production | `https://subtubes.com` | `/api/auth` | `/api/v1` |
 
 For example, Local's device-code endpoint is
 `http://localhost:3000/api/auth/device/code`.
@@ -383,7 +384,12 @@ All requests require Bearer token authorization in the `Authorization` header an
 | GET | `/api/v1/organizations/:orgId/limits` | Size/count limits and supported schema versions |
 | POST | `/api/v1/organizations/:orgId/blobs/missing` | Find un-uploaded blob hashes |
 | PUT | `/api/v1/organizations/:orgId/blobs/:sha256` | Raw binary blob upload |
-| PUT | `/api/v1/organizations/:orgId/designs/:designId` | Design document upload with If-Match/If-None-Match |
+| GET | `/api/v1/organizations/:orgId/designs` | Paginated preferred-diagram discovery |
+| GET | `/api/v1/organizations/:orgId/designs/:designId` | Pull the preferred complete definition |
+| GET | `/api/v1/organizations/:orgId/designs/:designId/versions` | Paginated immutable history |
+| GET | `/api/v1/organizations/:orgId/designs/:designId/versions/:versionId` | Pull an exact saved version |
+| POST | `/api/v1/organizations/:orgId/designs/:designId/versions` | Save a version; elect only if expected head is current |
+| PUT | `/api/v1/organizations/:orgId/designs/:designId/preferred` | Explicitly elect a saved version with a head-generation check |
 | PUT | `/api/v1/organizations/:orgId/reports/:reportId/snapshots/:number` | Write-once snapshot upload with hash idempotency |
 | PUT | `/api/v1/organizations/:orgId/reports/:reportId` | Report head publication with If-Match concurrency |
 | GET | `/api/v1/organizations/:orgId/reports/:reportId/status` | Report revision and available snapshots |
@@ -393,7 +399,190 @@ All requests require Bearer token authorization in the `Authorization` header an
 - Maximum design document size: 2 MiB
 - Maximum blob size: 5 MiB
 - Supported report schema versions: `[2]`
+- Supported design schema versions: `[1]` (`supportedDesignSchemaVersions` in `/limits`)
+- Maximum design blob references: 500 (`maxBlobsPerDesign` in `/limits`)
 - Inline media (`data:image/...`, `data:video/...`, `data:audio/...`) is strictly forbidden and rejected with `422 inline_media`. Blobs must be uploaded to `/blobs/:sha256` and referenced by hash.
+
+### 5.4 Diagram versions and preferred working copy
+
+**No merging.** Every accepted push creates an immutable definition under the
+same design ID. One pointer selects the preferred cloud working copy. Old
+versions and attachments remain downloadable. Only organization members can
+read, and only the design owner can push versions or elect the leader.
+Another computer signed into the same account has those same owner permissions.
+Account/organization deletion still removes their data.
+
+This contract **replaces** the old single-document `PUT /designs/:designId`
+(now unsupported / HTTP 405). It does not change report/snapshot uploads.
+Backend routes are implemented in this checkout; production deployment and the
+desktop interface/checkpoint store must be coordinated separately.
+
+#### Three different version concepts
+
+- `document.revision`: the desktop's local document revision, preserved as
+  metadata; never use it as a cloud concurrency precondition.
+- Saved `version.id` / `version.number`: immutable server-issued identity and
+  ascending per-design sequence. Sequence is upload order, not preference.
+- `headGeneration`: server-controlled generation of the preferred pointer.
+  It increments whenever the leader changes, even if electing an old version.
+  An A -> B -> A election cannot satisfy a stale precondition.
+
+#### Push
+
+Upload missing blobs first, then submit:
+
+```http
+POST /api/v1/organizations/:orgId/designs/:designId/versions
+Authorization: Bearer <session-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "uploadId": "802dff3e-7fa6-4b5d-928c-bac4b4d46018",
+  "expectedHeadGeneration": 0,
+  "deviceLabel": "Laptop",
+  "document": {
+    "name": "Architecture",
+    "kind": "swimlane",
+    "schemaVersion": 1,
+    "revision": 3,
+    "content": { "nodes": [], "links": [], "groups": [] },
+    "refs": { "blobs": [] }
+  }
+}
+```
+
+`uploadId` is a fresh UUID for each intentional push and must be retained across
+transport retries. `expectedHeadGeneration` is required: zero means no cloud
+diagram; thereafter send the generation observed during the last pull/read.
+`deviceLabel` is optional display metadata (1-100 trimmed characters), not
+trusted identity. Name is 1-200 trimmed characters, kind is `swimlane` or `system`,
+schema version is currently 1, local revision is a positive integer, and content
+is a JSON object. Envelopes reject unknown fields. Enumerate all images in
+`refs.blobs` (at most 500 SHA-256 hashes); hashes are normalized and deduplicated.
+The 2 MiB limit applies to the entire request including the envelope.
+
+On a new saved version, HTTP 201:
+
+```json
+{
+  "success": true,
+  "replayed": false,
+  "designId": "<design-id>",
+  "preferredVersionId": "<current-leader-version-id>",
+  "headGeneration": 4,
+  "versionCount": 6,
+  "savedVersion": {
+    "id": "<new-version-id>",
+    "number": 6,
+    "uploadId": "802dff3e-7fa6-4b5d-928c-bac4b4d46018",
+    "contentHash": "sha256:<server-computed-hash>",
+    "authorId": "<authenticated-owner-id>",
+    "deviceLabel": "Laptop",
+    "createdAt": "<ISO timestamp>",
+    "name": "Architecture",
+    "kind": "swimlane",
+    "schemaVersion": 1,
+    "revision": 3
+  },
+  "outcome": "saved_requires_selection"
+}
+```
+
+- `saved_and_preferred`: expected generation matched; the saved version was
+  elected in the same transaction.
+- `saved_requires_selection`: expected generation was stale; the version is
+  durably saved but the leader did **not** move. Show a chooser, not generic
+  “synced” feedback. This is not an unsaved HTTP 409.
+- Exact retry: HTTP 200, `replayed: true`, same saved version, no extra version
+  or election. Head fields and outcome describe the **current** preference,
+  which may have changed since the original request.
+- Upload-ID reuse with changed document, device label or expected generation:
+  HTTP 409 `upload_id_conflict`; no data changed. A new intentional push needs
+  a new UUID. Equal content with distinct upload IDs is retained as separate
+  intentional versions.
+
+The canonical content hash covers the normalized full `document`, including name,
+kind, schema version, local revision, content and refs. Object key order is
+canonicalized; array order is significant. It excludes upload/device/head fields.
+
+#### Discovery, history and pull
+
+- `GET /designs?limit=25&cursor=<last-design-id>` returns
+  `{ success, designs, nextCursor }`. Designs are ordered by ID ascending;
+  each includes `id`, `ownerId`, `name`, `kind`, `preferredVersionId`,
+  `headGeneration`, `versionCount`, preferred `number`/`contentHash`, and
+  ISO `updatedAt`. No full documents appear in discovery results.
+- `GET /designs/:id` returns
+  `{ success, designId, preferredVersionId, headGeneration, versionCount, version }`.
+  `version` includes the saved metadata above and the complete `document`.
+- `GET /designs/:id/versions?limit=25&cursor=<last-version-number>` returns
+  `{ success, designId, preferredVersionId, headGeneration, versions, nextCursor }`.
+  Versions are newest-first saved metadata plus a `preferred` boolean.
+- `GET /designs/:id/versions/:versionId` returns
+  `{ success, designId, version }` with the exact historical document.
+
+Limits are integers from 1 to 100. `nextCursor: null` means no more results.
+Use the returned cursor rather than offsets. Read responses are `Cache-Control:
+no-store`; the leader can change at any moment. Blob downloads use the existing
+organization-scoped authenticated `GET /blobs/:sha256`.
+
+#### Explicit winner selection
+
+```http
+PUT /api/v1/organizations/:orgId/designs/:designId/preferred
+Authorization: Bearer <session-token>
+Content-Type: application/json
+```
+
+```json
+{
+  "versionId": "<chosen-saved-version-id>",
+  "expectedHeadGeneration": 4
+}
+```
+
+HTTP 200 returns `{ success, designId, preferredVersionId, headGeneration,
+versionCount }`. Selecting the already-preferred version with a current
+generation is a no-op. The candidate must belong to this design and organization.
+The request is bounded to 4 KiB.
+
+If another computer changes the leader during the decision, HTTP 409
+`head_conflict` includes current head fields in `error.details`. Fetch the
+current candidates and ask again; never force or retry a choice with a new
+generation without user review. No saved definition is edited or deleted.
+
+#### Desktop UX and checkpoints (integration required)
+
+1. New computer: list designs, download the preferred definition and blobs.
+2. Store checkpoint by exact server/account/org/design:
+   preferred version ID, head generation, base document/hash and local edit
+   generation. Keep local revisions separate from cloud versions.
+3. Push a captured local document. On conflict, present:
+   **Use my pushed version**, **Keep current cloud version**, or
+   **Choose another saved version**. Cancel changes neither pointer nor local
+   working copy; the just-pushed candidate still exists in history.
+4. All choices are winner elections, not merges. “Keep both” happens implicitly
+   because neither saved version is deleted. No fork is needed to preserve both.
+5. Electing a cloud leader does **not** replace this computer's local document.
+   Pulling is a separate explicit action. Confirm overwriting unsynced local
+   work, save a recoverable local backup, and install the full document/blobs
+   atomically only if the captured local edit generation is still current.
+6. If local edits continue during a push, keep them unsynced; checkpoint only
+   the document actually saved. A successful cloud election does not imply
+   every computer now has that version.
+7. Lost upload response: retry the same upload ID and payload. Lost election
+   response: fetch the current head; do not blindly replay a stale choice.
+   Offline/auth/network errors must retain local work and show retry guidance.
+
+Error envelopes retain `{ error: { code, message, details? } }`.
+Missing/malformed preconditions are HTTP 422 `invalid_document` before saving.
+Missing blobs are 422 `missing_blobs`; inline images are 422 `inline_media`;
+oversize is 413 `too_large`; wrong media type is 415 `invalid_document`;
+invalid pagination is 422 `invalid_page`. Authentication/membership/owner
+failures use 401/403, and inaccessible design/version lookups use 404.
+Unexpected database failures are logged and return 500 `internal_error`.
 
 ### Proposed identity and storage model
 

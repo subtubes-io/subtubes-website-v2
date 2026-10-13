@@ -5,6 +5,7 @@ export interface Database {
   account: AccountTable;
   blob: BlobTable;
   design: DesignTable;
+  designVersion: DesignVersionTable;
   deviceCode: DeviceCodeTable;
   invitation: InvitationTable;
   member: MemberTable;
@@ -120,6 +121,23 @@ interface DesignTable {
   id: string;
   organizationId: string;
   ownerId: string;
+  preferredVersionId: string | null;
+  headGeneration: Generated<number>;
+  versionCount: Generated<number>;
+  createdAt: Generated<Date>;
+  updatedAt: Generated<Date>;
+}
+
+interface DesignVersionTable {
+  id: string;
+  designId: string;
+  organizationId: string;
+  number: number;
+  uploadId: string;
+  requestHash: string;
+  contentHash: string;
+  authorId: string;
+  deviceLabel: string | null;
   name: string;
   kind: string;
   schemaVersion: number;
@@ -127,7 +145,6 @@ interface DesignTable {
   content: string;
   refs: string;
   createdAt: Generated<Date>;
-  updatedAt: Generated<Date>;
 }
 
 interface ReportTable {

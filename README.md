@@ -303,6 +303,46 @@ those fixtures afterward, and writes JSON results with PNG attachments to
 
 ## Database changes
 
+### Diagram versions and preferred cloud copy
+
+Diagram sync does not merge documents. Each accepted push saves an immutable
+version under one design ID. A server-controlled preferred-version pointer selects
+the working copy. Pushes based on the current head become preferred automatically;
+stale pushes are saved as candidates without replacing the leader. Owners may
+elect any retained version using an atomic head-generation check.
+
+The API supports cloud discovery, preferred/historical downloads, paginated
+history, and retry-safe uploads. See the [desktop version contract](docs/desktop-api-integration.md#54-diagram-versions-and-preferred-working-copy)
+for request/response shapes and winner-selection behavior. Desktop controls and
+local sync checkpoints are **not implemented by this website**.
+
+**Breaking change:** the old `PUT /designs/:designId` upload is removed. Clients
+must use `POST /designs/:designId/versions` and `PUT /designs/:designId/preferred`.
+This is a backend change awaiting a coordinated migration/deployment, not a claim
+that the currently deployed cloud already uses this contract.
+
+Before deploying the versioning change:
+
+1. Back up the database and test the migration on a development copy.
+2. Pause diagram writes and coordinate the desktop API cutover. The migration
+   moves existing design content into a first immutable version and removes the
+   old mutable document columns; old code cannot write after that migration.
+3. Apply `npm run db:migrate` separately using the migration connection, then
+   deploy the new server and upgraded desktop clients. Migration backfill runs
+   transactionally; assess its lock duration for the actual database size.
+4. Verify existing documents, owners, preferred pointers, hashes, and blob refs
+   survived. Previously overwritten content cannot be reconstructed.
+
+All accepted versions are retained without pruning. Account/organization deletion
+still cascades their data. The versioning migration deliberately refuses a
+destructive `down`; use a verified backup restoration or a forward migration for
+rollback, preserving any versions created after the cutover.
+
+Run `npx tsx --test tests/design-versions.test.ts` for the real-PostgreSQL suite.
+It requires the local Docker database, creates a unique isolated schema, exercises
+migration/API/concurrent push/election behavior, and removes only that schema.
+It refuses remote database hosts.
+
 Database types live in `lib/db/types.ts`; query the database through the Kysely instance exported from `lib/db/client.ts`. Better Auth uses the same Postgres connection pool.
 
 Add a timestamp-prefixed TypeScript migration in `migrations/`, exporting `up` and `down` functions that accept `Kysely<unknown>`, then run `npm run db:migrate`. Migrations are applied in alphabetical order by Kysely's migrator.

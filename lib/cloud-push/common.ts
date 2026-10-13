@@ -1,12 +1,14 @@
-import { createHash } from "node:crypto";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
+export { computeSha256, canonicalJsonStringify, computeCanonicalContentHash } from "./hash";
 
 export const LIMITS = {
   supportedSchemaVersions: [2],
+  supportedDesignSchemaVersions: [1],
   maxReportDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxSnapshotDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxDesignDocumentBytes: 2 * 1024 * 1024, // 2 MiB
+  maxBlobsPerDesign: 500,
   maxBlobBytes: 5 * 1024 * 1024, // 5 MiB
   maxBlobsPerReport: 500,
   maxSnapshotsPerReport: 100,
@@ -97,29 +99,6 @@ export async function authenticateOrgMember(request: Request, orgId: string) {
 
 export function normalizeSha256(hash: string): string {
   return hash.startsWith("sha256:") ? hash.slice(7).toLowerCase() : hash.toLowerCase();
-}
-
-export function computeSha256(data: Buffer | Uint8Array | string): string {
-  return createHash("sha256").update(data).digest("hex");
-}
-
-export function canonicalJsonStringify(obj: unknown): string {
-  if (obj === null || typeof obj !== "object") {
-    return JSON.stringify(obj);
-  }
-  if (Array.isArray(obj)) {
-    return "[" + obj.map(canonicalJsonStringify).join(",") + "]";
-  }
-  const keys = Object.keys(obj as Record<string, unknown>).sort();
-  const pairs = keys.map((key) => {
-    return JSON.stringify(key) + ":" + canonicalJsonStringify((obj as Record<string, unknown>)[key]);
-  });
-  return "{" + pairs.join(",") + "}";
-}
-
-export function computeCanonicalContentHash(document: unknown): string {
-  const canonical = canonicalJsonStringify(document);
-  return `sha256:${computeSha256(canonical)}`;
 }
 
 export function containsInlineMedia(value: unknown): boolean {

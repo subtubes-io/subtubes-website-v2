@@ -245,70 +245,84 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     assert.deepEqual(missingPostData.missing, []);
 
     // C. Designs flow
-    // PUT /designs/{designId} with inline media -> 422 inline_media
-    const inlineDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-None-Match": "*" },
+    const inlineDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
-        schemaVersion: 1,
-        revision: 1,
-        name: "Test Design",
-        kind: "swimlane",
-        content: { img: "data:image/png;base64,bad" },
-        refs: { blobs: [] },
+        uploadId: randomUUID(),
+        expectedHeadGeneration: 0,
+        document: {
+          schemaVersion: 1,
+          revision: 1,
+          name: "Test Design",
+          kind: "swimlane",
+          content: { img: "data:image/png;base64,bad" },
+          refs: { blobs: [] },
+        },
       }),
     });
     assert.equal(inlineDesignRes.status, 422);
     const inlineDesignData = await inlineDesignRes.json();
     assert.equal(inlineDesignData.error.code, "inline_media");
 
-    // PUT /designs/{designId} create valid design -> 200
-    const createDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-None-Match": "*" },
-      body: JSON.stringify({
-        schemaVersion: 1,
-        revision: 1,
-        name: "Test Swimlane",
-        kind: "swimlane",
-        content: { nodes: [] },
-        refs: { blobs: [imageHash] },
-      }),
-    });
-    assert.equal(createDesignRes.status, 200);
-
-    // PUT /designs/{designId} without If-Match when existing -> 409 revision_conflict
-    const conflictDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
-      method: "PUT",
+    const createDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
+      method: "POST",
       headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
-        schemaVersion: 1,
-        revision: 2,
-        name: "Test Swimlane Updated",
-        kind: "swimlane",
-        content: { nodes: [1] },
-        refs: { blobs: [imageHash] },
+        uploadId: randomUUID(),
+        expectedHeadGeneration: 0,
+        document: {
+          schemaVersion: 1,
+          revision: 1,
+          name: "Test Swimlane",
+          kind: "swimlane",
+          content: { nodes: [] },
+          refs: { blobs: [imageHash] },
+        },
       }),
     });
-    assert.equal(conflictDesignRes.status, 409);
-    const conflictDesignData = await conflictDesignRes.json();
-    assert.equal(conflictDesignData.error.code, "revision_conflict");
-    assert.equal(conflictDesignData.error.details.currentRevision, 1);
+    assert.equal(createDesignRes.status, 201);
+    assert.equal((await createDesignRes.json()).outcome, "saved_and_preferred");
 
-    // PUT /designs/{designId} with correct If-Match: 1 -> 200
-    const updateDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-Match": "1" },
+    const conflictDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
-        schemaVersion: 1,
-        revision: 2,
-        name: "Test Swimlane Updated",
-        kind: "swimlane",
-        content: { nodes: [1] },
-        refs: { blobs: [imageHash] },
+        uploadId: randomUUID(),
+        expectedHeadGeneration: 0,
+        document: {
+          schemaVersion: 1,
+          revision: 2,
+          name: "Test Swimlane Updated",
+          kind: "swimlane",
+          content: { nodes: [1] },
+          refs: { blobs: [imageHash] },
+        },
       }),
     });
-    assert.equal(updateDesignRes.status, 200);
+    assert.equal(conflictDesignRes.status, 201);
+    const conflictDesignData = await conflictDesignRes.json();
+    assert.equal(conflictDesignData.outcome, "saved_requires_selection");
+    assert.equal(conflictDesignData.headGeneration, 1);
+
+    const updateDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
+      method: "POST",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uploadId: randomUUID(),
+        expectedHeadGeneration: 1,
+        document: {
+          schemaVersion: 1,
+          revision: 2,
+          name: "Test Swimlane Updated",
+          kind: "swimlane",
+          content: { nodes: [1] },
+          refs: { blobs: [imageHash] },
+        },
+      }),
+    });
+    assert.equal(updateDesignRes.status, 201);
+    assert.equal((await updateDesignRes.json()).outcome, "saved_and_preferred");
 
     // D. Snapshots flow
     // GET /reports/{reportId}/status before report created -> 404
