@@ -387,6 +387,8 @@ All requests require Bearer token authorization in the `Authorization` header an
 | GET | `/api/v1/organizations/:orgId/limits` | Size/count limits and supported schema versions |
 | POST | `/api/v1/organizations/:orgId/blobs/missing` | Find un-uploaded blob hashes |
 | PUT | `/api/v1/organizations/:orgId/blobs/:sha256` | Raw binary blob upload |
+| POST | `/api/v1/organizations/:orgId/blobs/uploads` | Authorize a direct private image upload |
+| POST | `/api/v1/organizations/:orgId/blobs/uploads/:uploadId/complete` | Verify storage bytes and register a ready image |
 | GET | `/api/v1/organizations/:orgId/designs` | Paginated preferred-diagram discovery |
 | GET | `/api/v1/organizations/:orgId/designs/:designId` | Pull the preferred complete definition |
 | GET | `/api/v1/organizations/:orgId/designs/:designId/versions` | Paginated immutable history |
@@ -395,12 +397,19 @@ All requests require Bearer token authorization in the `Authorization` header an
 | PUT | `/api/v1/organizations/:orgId/designs/:designId/preferred` | Explicitly elect a saved version with a head-generation check |
 | PUT | `/api/v1/organizations/:orgId/reports/:reportId/snapshots/:number` | Write-once snapshot upload with hash idempotency |
 | PUT | `/api/v1/organizations/:orgId/reports/:reportId` | Report head publication with If-Match concurrency |
+
+Images use the [direct private image upload contract](./report-image-uploads.md).
+Desktop optimization occurs before local saving/hashing, with a 2 MiB final
+limit. The API authorizes uploads, verifies storage bytes, and registers each
+ready image; report publication waits for all image references. The raw PUT route
+remains for older clients. A private report Blob store and migration are required
+before rollout; the public avatar store is not suitable.
 | GET | `/api/v1/organizations/:orgId/reports/:reportId/status` | Report revision and available snapshots |
 
 ### 5.3 Payload limits and validation
 - Maximum report/snapshot document size: 10 MiB
 - Maximum design document size: 2 MiB
-- Maximum blob size: 5 MiB
+- Maximum blob size: 2 MiB (2,097,152 bytes); 16,384 pixels per side
 - Supported report schema versions: `[2]`
 - The compatibility extension adds `supportedReportSchemaVersions: [2]`; the
   existing `supportedSchemaVersions: [2]` remains an alias for older clients.

@@ -4,6 +4,7 @@ import type { ProfileLinks } from "@/lib/profile-links";
 export interface Database {
   account: AccountTable;
   blob: BlobTable;
+  blobUpload: BlobUploadTable;
   design: DesignTable;
   designVersion: DesignVersionTable;
   deviceCode: DeviceCodeTable;
@@ -113,7 +114,25 @@ interface BlobTable {
   hash: string;
   contentType: string;
   byteSize: number;
-  data: Buffer;
+  data: Buffer | null;
+  storagePath: string | null;
+  width: number | null;
+  height: number | null;
+  createdAt: Generated<Date>;
+}
+
+interface BlobUploadTable {
+  id: string;
+  organizationId: string;
+  ownerId: string;
+  hash: string;
+  contentType: string;
+  byteSize: number;
+  resourceKind: "report" | "design";
+  resourceId: string;
+  storagePath: string;
+  expiresAt: Date;
+  completedAt: Date | null;
   createdAt: Generated<Date>;
 }
 

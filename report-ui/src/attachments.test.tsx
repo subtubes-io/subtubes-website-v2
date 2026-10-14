@@ -49,7 +49,7 @@ test("only PNG, JPEG, WebP and GIF files within the size limit are accepted befo
   expect(imageProblem(image("a.png"))).toBeUndefined();
   expect(imageProblem(image("a.svg", "image/svg+xml"))).toMatch(/not a PNG, JPEG, WebP or GIF/);
   expect(imageProblem(image("a.txt", "text/plain"))).toMatch(/not a PNG/);
-  expect(imageProblem(image("big.png", "image/png", 5 * 1024 * 1024 + 1))).toMatch(/larger than 5 MB/);
+  expect(imageProblem(image("big.png", "image/png", 20 * 1024 * 1024 + 1))).toMatch(/20 MiB/);
 });
 
 test("Markdown shows stored images and still refuses remote ones", async () => {

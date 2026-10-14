@@ -1,7 +1,7 @@
 "use client";
 import { useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import { ImagePlus } from "lucide-react";
-import { IMAGE_ACCEPT, hasImageFiles, imageFiles, insertBlock, markdownFor, uploadImage } from "./attachments";
+import { IMAGE_ACCEPT, IMAGE_LIMIT_HINT, hasImageFiles, imageFiles, insertBlock, markdownFor, uploadImage } from "./attachments";
 
 interface Options { value: string; onChange: (value: string) => void; maxLength?: number; disabled?: boolean }
 
@@ -12,10 +12,12 @@ export function useImageAttach({ value, onChange, maxLength = 20000, disabled }:
   const latest = useRef(value); latest.current = value;
   const caret = useRef<{ start: number; end: number } | undefined>(undefined);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const writing = useRef(false);
 
   const remember = (element: HTMLTextAreaElement) => { caret.current = { start: element.selectionStart, end: element.selectionEnd }; };
   const attach = async (files: File[]) => {
-    if (!files.length || disabled) return;
+    if (!files.length || disabled || writing.current) return;
+    writing.current = true;
     setError(""); setBusy(true);
     try {
       for (const file of files) {
@@ -27,7 +29,7 @@ export function useImageAttach({ value, onChange, maxLength = 20000, disabled }:
         onChange(next.value);
       }
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
-    finally { setBusy(false); }
+    finally { writing.current = false; setBusy(false); }
   };
 
   const textareaProps = {
@@ -51,7 +53,7 @@ export function useImageAttach({ value, onChange, maxLength = 20000, disabled }:
     <button type="button" disabled={disabled || busy} onClick={() => picker.current?.click()}><ImagePlus size={14} aria-hidden="true" /> Add image</button>
     <input ref={picker} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose images to attach" tabIndex={-1}
       onChange={(event) => { const files = imageFiles(event.currentTarget.files); event.currentTarget.value = ""; void attach(files); }} />
-    <span className="attach-hint">or paste or drop PNG, JPEG, WebP or GIF</span>
+    <span className="attach-hint">Paste or drop. {IMAGE_LIMIT_HINT}</span>
     <span role="status" className="attach-status">{busy ? "Adding image…" : ""}</span>
     {error && <span role="alert" className="attach-error">{error}</span>}
   </div>;

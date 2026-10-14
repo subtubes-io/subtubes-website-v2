@@ -12,6 +12,7 @@ import { up as cloudReports } from "../migrations/20261012000200_cloud_reports";
 import { up as removeSnapshotFk } from "../migrations/20261012000201_remove_snapshot_report_fk";
 import { up as versionSchema, down as rollbackVersions } from "../migrations/20261013000000_design_versions";
 import { up as snapshotSchema, down as rollbackSnapshotMetadata } from "../migrations/20261014000000_design_snapshot_metadata";
+import { up as imageSchema } from "../migrations/20261014000100_direct_image_uploads";
 
 loadEnvConfig(process.cwd());
 
@@ -69,6 +70,7 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
       await snapshotSchema(tx);
       const after = await sql`select * from "designVersion"`.execute(tx);
       assert.deepEqual(after.rows, before.rows.map((row) => ({ ...row, snapshot: null })));
+      await imageSchema(tx);
     });
 
     const {

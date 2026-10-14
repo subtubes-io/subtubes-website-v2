@@ -1,6 +1,7 @@
 import { z } from "zod/v3";
 
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+export const LEGACY_IMAGE_BYTES = 5 * 1024 * 1024;
 export const MAX_IMAGE_SIDE = 16384;
 /** Base64 of a maximum-size image plus the JSON around it. */
 export const MAX_ATTACHMENT_REQUEST_BYTES = Math.ceil(MAX_IMAGE_BYTES * 4 / 3) + 4096;

@@ -1,6 +1,7 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
 import { SUPPORTED_DOCUMENT_SCHEMAS } from "./document-compatibility";
+import { MAX_IMAGE_BYTES, MAX_IMAGE_SIDE } from "./images";
 export { computeSha256, canonicalJsonStringify, computeCanonicalContentHash } from "./hash";
 
 export const LIMITS = {
@@ -14,7 +15,10 @@ export const LIMITS = {
   maxSnapshotDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxDesignDocumentBytes: 2 * 1024 * 1024, // 2 MiB
   maxBlobsPerDesign: 500,
-  maxBlobBytes: 5 * 1024 * 1024, // 5 MiB
+  maxBlobBytes: MAX_IMAGE_BYTES,
+  maxImageSide: MAX_IMAGE_SIDE,
+  directImageUploads: true,
+  imageUploadConcurrency: 3,
   maxBlobsPerReport: 500,
   maxSnapshotsPerReport: 100,
   allowedBlobTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],

@@ -8,6 +8,9 @@ import {
   normalizeSha256,
 } from "@/lib/cloud-push/common";
 import { db } from "@/lib/db/client";
+import { readImageBody, validateImage } from "@/lib/cloud-push/images";
+import { storedImageBytes } from "@/lib/cloud-push/blob-storage";
+import { DocumentError } from "@/lib/cloud-push/document-compatibility";
 
 export async function PUT(
   request: Request,
@@ -28,15 +31,14 @@ export async function PUT(
     );
   }
 
-  const arrayBuffer = await request.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
-
-  if (buffer.length > LIMITS.maxBlobBytes) {
-    return errorResponse(
-      413,
-      "too_large",
-      `Blob size exceeds maximum allowed limit of ${LIMITS.maxBlobBytes} bytes.`
-    );
+  let buffer: Buffer;
+  let dimensions: { width: number; height: number };
+  try {
+    buffer = await readImageBody(request);
+    dimensions = await validateImage(buffer, contentType);
+  } catch (error) {
+    if (error instanceof DocumentError) return errorResponse(error.status, error.code, error.message, error.details);
+    throw error;
   }
 
   const computedHash = computeSha256(buffer);
@@ -66,9 +68,11 @@ export async function PUT(
         contentType,
         byteSize: buffer.length,
         data: buffer,
+        storagePath: null,
+        ...dimensions,
         createdAt: new Date(),
       })
-      .execute();
+      .onConflict((conflict) => conflict.columns(["organizationId", "hash"]).doNothing()).execute();
   }
 
   return jsonResponse({
@@ -89,7 +93,7 @@ export async function GET(
   const expectedHash = normalizeSha256(sha256);
   const blob = await db
     .selectFrom("blob")
-    .select(["contentType", "byteSize", "data"])
+    .select(["contentType", "byteSize", "data", "storagePath"])
     .where("organizationId", "=", orgId)
     .where("hash", "=", expectedHash)
     .executeTakeFirst();
@@ -98,7 +102,14 @@ export async function GET(
     return errorResponse(404, "not_found", `Blob ${expectedHash} not found in organization.`);
   }
 
-  return new Response(new Uint8Array(blob.data), {
+  let bytes: Buffer;
+  try { bytes = await storedImageBytes(blob); }
+  catch (error) {
+    if (error instanceof DocumentError) return errorResponse(error.status, error.code, error.message, error.details);
+    console.error("Unable to read report image", error);
+    return errorResponse(503, "storage_unavailable", "Unable to read image storage.");
+  }
+  return new Response(new Uint8Array(bytes), {
     status: 200,
     headers: {
       "Content-Type": blob.contentType,

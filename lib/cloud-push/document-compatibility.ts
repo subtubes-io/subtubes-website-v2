@@ -72,6 +72,12 @@ export const jsonObjectSchema = z.record(z.string(), z.json());
 
 export function assertAttachmentReferences(content: unknown, hashes: readonly string[]) {
   const referenced = new Set<string>();
+  const imageHash = (value: unknown) => {
+    if (typeof value !== "string" || !/^[a-fA-F0-9]{64}$/.test(value)) {
+      throw new DocumentError(422, "invalid_document", "Image and preview references must be SHA-256 hashes.");
+    }
+    referenced.add(value.toLowerCase());
+  };
   const visit = (value: unknown) => {
     if (typeof value === "string") {
       for (const match of value.matchAll(/attachment:([a-fA-F0-9]{64})(?![a-fA-F0-9])/g)) {
@@ -80,10 +86,29 @@ export function assertAttachmentReferences(content: unknown, hashes: readonly st
     } else if (Array.isArray(value)) {
       value.forEach(visit);
     } else if (value && typeof value === "object") {
-      Object.values(value).forEach(visit);
+      for (const [key, item] of Object.entries(value)) {
+        if ((key === "image" || key === "preview") && typeof item === "string" && /^[a-fA-F0-9]{64}$/.test(item)) imageHash(item);
+        else if (key === "shots" && item && typeof item === "object" && !Array.isArray(item)) Object.values(item).forEach(imageHash);
+        else visit(item);
+      }
     }
   };
   visit(content);
+  if (content && typeof content === "object" && !Array.isArray(content)) {
+    const document = content as Record<string, unknown>;
+    const checkSteps = (steps: unknown) => {
+      if (Array.isArray(steps)) for (const step of steps) {
+        if (step && typeof step === "object" && "image" in step && step.image !== undefined) imageHash(step.image);
+      }
+    };
+    if (Array.isArray(document.walkthroughs)) for (const walkthrough of document.walkthroughs) {
+      if (walkthrough && typeof walkthrough === "object" && "steps" in walkthrough) checkSteps(walkthrough.steps);
+    }
+    checkSteps(document.qa);
+    if (Array.isArray(document.swimlanes)) for (const diagram of document.swimlanes) {
+      if (diagram && typeof diagram === "object" && "preview" in diagram && diagram.preview !== undefined) imageHash(diagram.preview);
+    }
+  }
   const known = new Set(hashes.map((hash) => hash.replace(/^sha256:/, "").toLowerCase()));
   const missing = [...referenced].filter((hash) => !known.has(hash));
   if (missing.length) {

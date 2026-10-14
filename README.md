@@ -105,6 +105,7 @@ Set these environment variables for **Production** before deploying:
 | `BETTER_AUTH_URL` | The canonical production origin, e.g. `https://your-app.vercel.app` or your custom domain |
 | `BETTER_AUTH_TRUSTED_ORIGINS` | Optional comma-separated exact additional app origins, e.g. `https://www.subtubes.com`; no wildcards, paths, or trailing slashes |
 | `BLOB_READ_WRITE_TOKEN` | A production Vercel Blob store token for avatar uploads |
+| `REPORT_BLOB_READ_WRITE_TOKEN` | A separate **private** Vercel Blob store token for report/design images |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional production GitHub OAuth app credentials |
 
 Keep these server-only (no `NEXT_PUBLIC_` prefix). `DATABASE_MIGRATION_URL` is
@@ -117,6 +118,18 @@ Use a separate GitHub OAuth app for local development.
 Provision a public Vercel Blob store for production and connect it to the
 project. Without its token, avatar uploads return an explicit configuration
 error; database-backed account features do not need Blob.
+
+Report and design images use a separate **private** store, not the public avatar
+store. Configure `REPORT_BLOB_READ_WRITE_TOKEN` before enabling desktop direct
+uploads, and apply `20261014000100_direct_image_uploads` before deploying the new
+API. Existing database-backed images are preserved and remain readable. New
+images upload directly with short-lived, path/type/size-restricted client tokens;
+the API verifies SHA-256 and image dimensions before registering them. Never
+expose either read-write store token to the desktop or browser.
+
+Images are limited to 2 MiB after local desktop optimization. Downloads remain
+authenticated through the existing API and fit below Vercel's function response
+limit. Direct uploads do not change report JSON transport limits.
 
 Use a **separate Supabase project/database and Blob store for Preview**, with
 separate secrets and migrations. For a login-enabled preview, use a stable

@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, ImagePlus, Pencil, Plus, Trash2 } from "lucide-r
 import type { QaStep, QaWalkthrough } from "./model/qa";
 import { MAX_QA_NOTE } from "./model/qa";
 import { AttachmentImage } from "./AttachmentImage";
-import { IMAGE_ACCEPT, imageFiles, uploadImage } from "./attachments";
+import { IMAGE_ACCEPT, IMAGE_LIMIT_HINT, imageFiles, uploadImage } from "./attachments";
 import { DeleteDialog } from "./DeleteDialog";
 import { StepThumbnail, WalkthroughCarousel } from "./WalkthroughCarousel";
 import { reportServices } from "./services";
@@ -45,15 +45,17 @@ function StepCard({ step, index, last, controls, files, onOpenFile, editing, set
 }) {
   const [note, setNote] = useState(step.note), [image, setImage] = useState<string | undefined>(step.image), [error, setError] = useState(""), [uploading, setUploading] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
+  const replacing = useRef(false);
   const disabled = !controls.enabled || controls.busy;
   const number = index + 1;
   useEffect(() => { if (!editing) { setNote(step.note); setImage(step.image); setError(""); } }, [editing, step]);
   const run = async (work: () => Promise<void>) => { setError(""); try { await work(); } catch (cause) { setError(messageOf(cause)); } };
   const replace = async (list: File[]) => {
     const file = list[0];
-    if (!file) return;
+    if (!file || disabled || replacing.current) return;
+    replacing.current = true;
     setUploading(true);
-    await run(async () => { try { setImage((await uploadImage(file)).hash); } finally { setUploading(false); } });
+    await run(async () => { try { setImage((await uploadImage(file)).hash); } finally { replacing.current = false; setUploading(false); } });
   };
   const save = () => run(async () => { await controls.onEdit(step, { note, image: image ?? null }); setEditing(false); });
   const shown = editing ? image : step.image;
@@ -68,11 +70,12 @@ function StepCard({ step, index, last, controls, files, onOpenFile, editing, set
           <input ref={picker} type="file" accept={IMAGE_ACCEPT} hidden aria-label={`Choose a screenshot for step ${number}`} tabIndex={-1}
             onChange={(event) => { const picked = imageFiles(event.currentTarget.files); event.currentTarget.value = ""; void replace(picked); }} />
           <button type="button" disabled={disabled || uploading} onClick={() => picker.current?.click()}>{image ? "Replace screenshot" : "Add a screenshot"}</button>
-          {image && <button type="button" disabled={disabled} onClick={() => setImage(undefined)}>Remove screenshot</button>}
+          {image && <button type="button" disabled={disabled || uploading} onClick={() => setImage(undefined)}>Remove screenshot</button>}
           <span className="qa-edit-spacer" />
-          <button type="button" disabled={disabled} onClick={() => setEditing(false)}>Cancel</button>
+          <button type="button" disabled={disabled || uploading} onClick={() => setEditing(false)}>Cancel</button>
           <button type="button" className="primary" disabled={disabled || uploading || (!note.trim() && !image)} onClick={() => void save()}>Save step</button>
         </div>
+        <p className="attach-hint">{IMAGE_LIMIT_HINT}</p>
         {error && <p role="alert" className="qa-error">{error}</p>}
       </div>
         : <>
@@ -99,9 +102,11 @@ function WalkthroughEditor({ controls, files, onOpenFile, problems, setProblems 
   const [editing, setEditing] = useState<string>(), [uploading, setUploading] = useState(false), [over, setOver] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const controlsRef = useRef(controls); controlsRef.current = controls;
+  const writing = useRef(false);
   const { steps, enabled } = controls;
   const add = async (list: File[]) => {
-    if (!list.length || !controlsRef.current.enabled) return;
+    if (!list.length || !controlsRef.current.enabled || controlsRef.current.busy || writing.current) return;
+    writing.current = true;
     setUploading(true); setProblems([]);
     const failed: string[] = [];
     let created: QaStep[] = [];
@@ -109,11 +114,12 @@ function WalkthroughEditor({ controls, files, onOpenFile, problems, setProblems 
       try { created = await controlsRef.current.onAdd({ image: (await uploadImage(file)).hash }); }
       catch (cause) { failed.push(messageOf(cause)); }
     }
-    setUploading(false); setProblems(failed);
+    writing.current = false; setUploading(false); setProblems(failed);
     // A single new screenshot opens its note straight away, since a step is a picture plus what happened.
     if (list.length === 1 && !failed.length && created.length) setEditing(created[created.length - 1].id);
   };
   const addNote = async () => {
+    if (!controlsRef.current.enabled || controlsRef.current.busy || writing.current) return;
     setProblems([]);
     try { const created = await controls.onAdd({ note: "" }); setEditing(created[created.length - 1].id); }
     catch (cause) { setProblems([messageOf(cause)]); }
@@ -141,6 +147,7 @@ function WalkthroughEditor({ controls, files, onOpenFile, problems, setProblems 
           <ImagePlus size={28} aria-hidden="true" />
           <strong>{steps.length ? "Add the next step" : "Add the first step"}</strong>
           <span>Drop or paste screenshots, or choose them. Each image becomes a step.</span>
+          <span className="attach-hint">{IMAGE_LIMIT_HINT}</span>
           <input ref={picker} type="file" accept={IMAGE_ACCEPT} multiple hidden aria-label="Choose screenshots to add as QA steps" tabIndex={-1}
             onChange={(event) => { const picked = imageFiles(event.currentTarget.files); event.currentTarget.value = ""; void add(picked); }} />
           <div className="qa-drop-actions">
