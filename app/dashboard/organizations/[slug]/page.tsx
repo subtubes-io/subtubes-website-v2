@@ -9,6 +9,7 @@ import {
 } from "@/components/report/organization-reports-list";
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
+import { readWebsiteReport } from "@/lib/report-reader";
 
 async function OrganizationDetails({
   params,
@@ -49,12 +50,12 @@ async function OrganizationDetails({
       .orderBy("id", "asc")
       .execute() : Promise.resolve([]),
     db.selectFrom("report")
-      .select(["id", "projectName", "report", "updatedAt"])
+      .selectAll()
       .where("organizationId", "=", organization.id)
       .orderBy("updatedAt", "desc")
       .execute(),
     db.selectFrom("reportSnapshot")
-      .select(["id", "reportId", "number", "takenAt", "commit"])
+      .selectAll()
       .where("organizationId", "=", organization.id)
       .orderBy("number", "asc")
       .execute(),
@@ -68,36 +69,26 @@ async function OrganizationDetails({
   }
 
   const reportSummaries: OrganizationReportSummary[] = reportRows.map((r) => {
-    let reportData: any = {};
-    try {
-      reportData = JSON.parse(r.report);
-    } catch {
-      reportData = {};
-    }
+    const decoded = readWebsiteReport(r);
+    const reportData = decoded.report;
     const reportSnaps = snapshotsByReport.get(r.id) ?? [];
     const latestSnap = reportSnaps[reportSnaps.length - 1];
-    let latestCommit: any = undefined;
-    if (latestSnap?.commit) {
-      try {
-        latestCommit = JSON.parse(latestSnap.commit);
-      } catch {
-        latestCommit = undefined;
-      }
-    }
-    const flags = Array.isArray(reportData.flags) ? reportData.flags : [];
+    const latestCommit = latestSnap ? readWebsiteReport(latestSnap).commit : undefined;
+    const flags = reportData?.flags ?? [];
     const flagCounts = {
-      high: flags.filter((f: any) => f.severity === "high").length,
-      medium: flags.filter((f: any) => f.severity === "medium").length,
-      low: flags.filter((f: any) => f.severity === "low").length,
+      high: flags.filter((f) => f.severity === "high").length,
+      medium: flags.filter((f) => f.severity === "medium").length,
+      low: flags.filter((f) => f.severity === "low").length,
     };
 
     return {
       id: r.id,
-      name: reportData.title || r.projectName || r.id,
-      title: reportData.title,
+      name: reportData?.title || r.projectName || r.id,
+      title: reportData?.title,
+      compatibility: decoded.compatibility,
       projectName: r.projectName,
       savedAt: r.updatedAt.toISOString(),
-      stats: reportData.stats,
+      stats: reportData?.stats,
       snapshots: {
         count: reportSnaps.length,
         latest: latestSnap
@@ -109,14 +100,14 @@ async function OrganizationDetails({
           : undefined,
       },
       info: {
-        preview: reportData.narrative?.slice(0, 200) || "",
+        preview: reportData?.narrative?.slice(0, 200) || "",
         flags: flagCounts,
-        shots: Object.keys(reportData.shots ?? {}).length,
-        visualScenarios: reportData.visual?.scenarios?.length ?? 0,
-        mapNodes: reportData.map?.nodes?.length ?? 0,
-        flows: reportData.result?.flows?.length ?? 0,
-        base: reportData.base,
-        head: reportData.head,
+        shots: Object.keys(reportData?.shots ?? {}).length,
+        visualScenarios: reportData?.visual?.scenarios?.length ?? 0,
+        mapNodes: reportData?.map?.nodes?.length ?? 0,
+        flows: reportData?.result?.flows?.length ?? 0,
+        base: reportData?.base,
+        head: reportData?.head,
       },
     };
   });

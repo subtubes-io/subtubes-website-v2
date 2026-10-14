@@ -4,6 +4,11 @@ import { z } from "zod";
 import type { Database } from "@/lib/db/types";
 import { LIMITS, containsInlineMedia, normalizeSha256 } from "./common";
 import { computeCanonicalContentHash } from "./hash";
+import {
+  DocumentError as DesignError, assertAttachmentReferences, assertSupportedSchema, parseStoredJson, requireReadableSchema,
+  schemaCompatibility, validateStored, type ReaderCapabilities,
+} from "./document-compatibility";
+export { DocumentError as DesignError } from "./document-compatibility";
 
 const integer = z.number().int().min(0).max(2_147_483_646);
 const identifier = z.string().min(1).max(200);
@@ -47,17 +52,6 @@ export type VersionUpload = z.infer<typeof versionUploadSchema>;
 type Design = Selectable<Database["design"]>;
 type Version = Selectable<Database["designVersion"]>;
 
-export class DesignError extends Error {
-  constructor(
-    public readonly status: number,
-    public readonly code: string,
-    message: string,
-    public readonly details?: Record<string, unknown>,
-  ) {
-    super(message);
-  }
-}
-
 export async function readDesignBody(request: Request, maxBytes = LIMITS.maxDesignDocumentBytes): Promise<unknown> {
   if (request.headers.get("content-type")?.split(";")[0].trim() !== "application/json") {
     throw new DesignError(415, "invalid_document", "Send an application/json body.");
@@ -84,6 +78,8 @@ export async function readDesignBody(request: Request, maxBytes = LIMITS.maxDesi
 }
 
 export function parseUpload(value: unknown): VersionUpload {
+  const envelope = z.object({ document: z.object({ schemaVersion: z.unknown() }) }).safeParse(value);
+  if (envelope.success) assertSupportedSchema(envelope.data.document.schemaVersion, "design");
   const result = versionUploadSchema.safeParse(value);
   if (!result.success) {
     throw new DesignError(422, "invalid_document", "Invalid version upload.", {
@@ -93,6 +89,7 @@ export function parseUpload(value: unknown): VersionUpload {
   if (containsInlineMedia(result.data.document.content)) {
     throw new DesignError(422, "inline_media", "Upload images as blobs, not inline data URLs.");
   }
+  assertAttachmentReferences(result.data.document.content, result.data.document.refs.blobs);
   return result.data;
 }
 
@@ -105,25 +102,52 @@ export function headState(design: Pick<Design, "id" | "preferredVersionId" | "he
   };
 }
 
-export function versionMetadata(version: Omit<Version, "content" | "refs" | "requestHash">) {
+export function versionMetadata(version: Omit<Version, "content" | "refs" | "requestHash">, includeSnapshot = true) {
   return {
     id: version.id, number: version.number, uploadId: version.uploadId,
     contentHash: version.contentHash, authorId: version.authorId,
     deviceLabel: version.deviceLabel, createdAt: version.createdAt.toISOString(),
     name: version.name, kind: version.kind, schemaVersion: version.schemaVersion,
     revision: version.revision,
-    ...(version.snapshot === null ? {} : { snapshot: snapshotMetadataSchema.parse(JSON.parse(version.snapshot)) }),
+    ...(!includeSnapshot || version.snapshot === null ? {} : {
+      snapshot: validateStored(snapshotMetadataSchema, parseStoredJson(version.snapshot, `design version ${version.id} metadata`), version.id),
+    }),
   };
 }
 
-export function versionDocument(version: Version) {
+export function versionDocument(version: Version, reader: ReaderCapabilities = { versions: [1], explicit: false }) {
+  requireReadableSchema(version.schemaVersion, "design", reader);
+  const document = {
+    name: version.name, kind: version.kind, schemaVersion: version.schemaVersion,
+    revision: version.revision, content: parseStoredJson(version.content, `design version ${version.id}`),
+    refs: parseStoredJson(version.refs, `design version ${version.id} references`),
+  };
+  const parsed = validateStored(versionUploadSchema.shape.document, document, version.id);
+  assertAttachmentReferences(document.content, parsed.refs.blobs);
+  if (computeCanonicalContentHash(document) !== version.contentHash) {
+    console.error("Stored design hash mismatch", version.id);
+    throw new DesignError(422, "invalid_document", "Invalid document");
+  }
   return {
     ...versionMetadata(version),
-    document: {
-      name: version.name, kind: version.kind, schemaVersion: version.schemaVersion,
-      revision: version.revision, content: JSON.parse(version.content),
-      refs: JSON.parse(version.refs),
-    },
+    document,
+  };
+}
+
+export function versionSummary(version: Version, reader: ReaderCapabilities) {
+  let state = schemaCompatibility(version.schemaVersion, "design", reader);
+  if (!reader.explicit && state.status === "unsupported") requireReadableSchema(version.schemaVersion, "design", reader);
+  if (state.status === "supported") {
+    try {
+      versionDocument(version, reader);
+    } catch (error) {
+      if (!(error instanceof DesignError) || error.code !== "invalid_document") throw error;
+      state = { status: "invalid", schemaVersion: version.schemaVersion, message: "Invalid document" };
+    }
+  }
+  return {
+    ...versionMetadata(version, state.status === "supported"),
+    ...(reader.explicit || state.status === "invalid" ? { compatibility: state } : {}),
   };
 }
 
@@ -135,6 +159,7 @@ function assertOwner(design: Design, userId: string) {
 
 export async function saveDesignVersion(
   database: Kysely<Database>, orgId: string, designId: string, userId: string, upload: VersionUpload,
+  reader: ReaderCapabilities = { versions: [1], explicit: false },
 ) {
   if (!identifier.safeParse(designId).success) {
     throw new DesignError(422, "invalid_document", "Invalid design ID.");
@@ -165,6 +190,14 @@ export async function saveDesignVersion(
         replayed: true, ...headState(design), savedVersion: versionMetadata(previous),
         outcome: design.preferredVersionId === previous.id ? "saved_and_preferred" : "saved_requires_selection",
       };
+    }
+
+    requireReadableSchema(upload.document.schemaVersion, "design", reader);
+    if (design.preferredVersionId) {
+      const preferred = await tx.selectFrom("designVersion").selectAll()
+        .where("id", "=", design.preferredVersionId).where("designId", "=", designId)
+        .where("organizationId", "=", orgId).executeTakeFirstOrThrow();
+      versionDocument(preferred, reader);
     }
 
     const hashes = upload.document.refs.blobs;
@@ -202,6 +235,7 @@ export async function saveDesignVersion(
 export async function electPreferredVersion(
   database: Kysely<Database>, orgId: string, designId: string, userId: string,
   selection: z.infer<typeof preferredSchema>,
+  reader: ReaderCapabilities = { versions: [1], explicit: false },
 ) {
   return database.transaction().execute(async (tx) => {
     const design = await tx.selectFrom("design").selectAll()
@@ -212,10 +246,17 @@ export async function electPreferredVersion(
     if (design.headGeneration !== selection.expectedHeadGeneration) {
       throw new DesignError(409, "head_conflict", "The preferred version changed; review it before choosing again.", headState(design));
     }
-    const version = await tx.selectFrom("designVersion").select("id")
+    const version = await tx.selectFrom("designVersion").selectAll()
       .where("id", "=", selection.versionId).where("designId", "=", designId)
       .where("organizationId", "=", orgId).executeTakeFirst();
     if (!version) throw new DesignError(404, "not_found", "Version not found in this design.");
+    versionDocument(version, reader);
+    if (design.preferredVersionId && design.preferredVersionId !== version.id) {
+      const preferred = await tx.selectFrom("designVersion").selectAll()
+        .where("id", "=", design.preferredVersionId).where("designId", "=", designId)
+        .where("organizationId", "=", orgId).executeTakeFirstOrThrow();
+      versionDocument(preferred, reader);
+    }
     if (design.preferredVersionId === version.id) return headState(design);
     const updated = await tx.updateTable("design").set({
       preferredVersionId: version.id, headGeneration: design.headGeneration + 1, updatedAt: new Date(),

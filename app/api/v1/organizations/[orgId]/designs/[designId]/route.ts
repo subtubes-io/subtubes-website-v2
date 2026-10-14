@@ -2,6 +2,7 @@ import { corsPreflightResponse, jsonResponse } from "@/lib/cloud-push/common";
 import { designRequest } from "@/lib/cloud-push/design-api";
 import { DesignError, headState, versionDocument } from "@/lib/cloud-push/designs";
 import { db } from "@/lib/db/client";
+import { readerCapabilities } from "@/lib/cloud-push/document-compatibility";
 
 export async function GET(
   request: Request,
@@ -22,7 +23,7 @@ export async function GET(
     return jsonResponse({
       success: true,
       ...headState({ ...result, id: designId }),
-      version: versionDocument(result),
+      version: versionDocument(result, readerCapabilities(request, "design")),
     });
   });
 }

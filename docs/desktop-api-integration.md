@@ -27,6 +27,7 @@ The organization-scoped `/api/v1` cloud API is also deployed.
 | Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
 | Immutable diagram versions, cloud discovery/pull and preferred-version election | Deployed on https://subtubes.com; desktop integration still required |
 | Portable design snapshot notes and capture metadata | Deployed on https://subtubes.com; desktop capability negotiation and consumption still required |
+| Document compatibility metadata and race-safe incompatible-head protection | Implemented in this checkout; not deployed; desktop reader integration required |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -401,6 +402,8 @@ All requests require Bearer token authorization in the `Authorization` header an
 - Maximum design document size: 2 MiB
 - Maximum blob size: 5 MiB
 - Supported report schema versions: `[2]`
+- The compatibility extension adds `supportedReportSchemaVersions: [2]`; the
+  existing `supportedSchemaVersions: [2]` remains an alias for older clients.
 - Supported design schema versions: `[1]` (`supportedDesignSchemaVersions` in `/limits`)
 - Maximum design blob references: 500 (`maxBlobsPerDesign` in `/limits`)
 - Inline media (`data:image/...`, `data:video/...`, `data:audio/...`) is strictly forbidden and rejected with `422 inline_media`. Blobs must be uploaded to `/blobs/:sha256` and referenced by hash.
@@ -584,6 +587,8 @@ consumption.
   each includes `id`, `ownerId`, `name`, `kind`, `preferredVersionId`,
   `headGeneration`, `versionCount`, preferred `number`/`contentHash`, and
   ISO `updatedAt`. No full documents appear in discovery results.
+  Compatibility-aware requests also receive the preferred `schemaVersion` and
+  compatibility state (see section 5.5); legacy requests retain schema-1 discovery.
 - `GET /designs/:id` returns
   `{ success, designId, preferredVersionId, headGeneration, versionCount, version }`.
   `version` includes the saved metadata above and the complete `document`.
@@ -647,6 +652,8 @@ generation without user review. No saved definition is edited or deleted.
    Offline/auth/network errors must retain local work and show retry guidance.
 
 Error envelopes retain `{ error: { code, message, details? } }`.
+Unsupported positive schema versions use `unsupported_schema_version`, not
+`invalid_document`, once the compatibility extension is deployed.
 Missing/malformed preconditions are HTTP 422 `invalid_document` before saving.
 Missing blobs are 422 `missing_blobs`; inline images are 422 `inline_media`;
 oversize is 413 `too_large`; wrong media type is 415 `invalid_document`;
@@ -734,6 +741,151 @@ code/data: show the destination and require explicit sharing.
 Publishing/review role policy, report size/asset limits, retention, deletion,
 and cache access after logout/membership removal are product decisions still
 required. Do not infer these from invitation-management permissions.
+
+## 5.5 JSON document compatibility (implemented, not deployed)
+
+This backend change enables no new document format and requires no database
+migration. Deploy the server before clients negotiate its capabilities.
+
+| Number | Meaning |
+| --- | --- |
+| Desktop SQLite `user_version` | Local database layout, not cloud document format |
+| JSON `schemaVersion` | Interpretation of a serialized document |
+| `revision` | Mutable/local source revision, not a format |
+| Snapshot/version `number` | Immutable history sequence |
+| Cloud `headGeneration` | Preferred-pointer concurrency |
+| `/api/v1` | HTTP protocol, independent of payload schemas |
+
+Cloud design documents remain wire schema **1**; cloud reports and report
+snapshots remain wire schema **2**. Local report payload schema **1** inside
+a cloud report is a separate format. The backend preserves complete JSON objects
+and references; it does not relabel, down-convert or bulk-rewrite stored content.
+Local design/report validators, SQLite upgrades, offline libraries, native/MCP
+guards and pending-upload persistence remain desktop responsibilities.
+
+### Capability negotiation and reader headers
+
+The extension adds these organization-scoped `/limits` fields:
+
+```json
+{
+  "supportedDesignSchemaVersions": [1],
+  "supportedReportSchemaVersions": [2],
+  "documentCompatibilityMetadata": true,
+  "documentReaderCapabilities": true
+}
+```
+
+After observing the positive capabilities, declare the formats this reader
+actually understands on **every** relevant read, upload and preferred-election
+request. Each header is a comma-separated list of 1-16 positive safe integers:
+
+```http
+X-Subtubes-Design-Schema-Versions: 1
+X-Subtubes-Report-Schema-Versions: 2
+```
+
+Do not infer support from app versions or advertise formats the client cannot
+decode. Missing headers permanently mean the legacy design `[1]` or report `[2]`
+reader, even when a future server adds new formats. Malformed headers return
+422 `invalid_reader_capabilities`. Headers do not change upload envelopes or
+participate in immutable upload-ID hashing. Authorization still precedes metadata
+or compatibility responses.
+
+### Metadata and mixed-version libraries
+
+With an explicit resource reader header, design discovery/history entries and
+report discovery/history entries include each stored **wire** schema and:
+
+```json
+{
+  "compatibility": {
+    "status": "unsupported",
+    "schemaVersion": 3,
+    "message": "This document requires a newer app. Update Subtubes IRE."
+  }
+}
+```
+
+States are `supported`, `unsupported`, and `invalid`. No compatibility annotation
+is part of the hashed document. Unsupported items are neither decoded into the
+current model nor filtered out. IDs, preferred identity, version numbers and
+pagination remain intact. Supported items on the same page remain usable.
+Supported-schema corrupt JSON, invalid references or mismatched design hashes
+receive `invalid` rather than empty/default documents.
+
+- Design discovery adds the preferred `schemaVersion`. Legacy discovery omits it,
+  retaining its existing schema-1 shape.
+- Compatibility-aware `GET /reports?limit=25&cursor=<id>` returns metadata-only
+  `reports` plus `nextCursor`, ordered by ID ascending. Legacy requests retain
+  the existing summary shape/order for supported reports.
+- `GET /reports/:id/snapshots?limit=25&cursor=<number>` returns
+  `{ success, reportId, snapshots, nextCursor }`, newest first. Each entry has
+  `id`, `reportId`, `number`, `schemaVersion`, `contentHash`, `takenAt`, `note`
+  and `compatibility`, never full report content.
+- Report status preserves `snapshots: number[]`; explicit readers additionally
+  receive head schema/compatibility and `snapshotVersions` metadata.
+- Explicit-reader report/snapshot detail reads also include stored `refs`.
+- Limits are 1-100, default 25; `nextCursor: null` ends a page sequence.
+
+Legacy list/history requests encountering an unsupported item return **426
+`upgrade_required`**, not a filtered or downgraded page. Installed legacy binaries
+cannot gain per-item compatibility UI retroactively. Invalid content reads return
+422 `invalid_document`; unsupported content reads return 426 `upgrade_required`.
+Neither returns a success-shaped empty document.
+
+### Validation, mutation safety and retries
+
+Cloud envelopes require a schema marker. Missing, null, string, zero, fractional
+or unsafe markers are invalid; a well-formed unsupported positive integer returns
+422 `unsupported_schema_version` with:
+
+```json
+{
+  "error": {
+    "code": "unsupported_schema_version",
+    "message": "The requested document schema is not supported.",
+    "details": {
+      "documentType": "design",
+      "schemaVersion": 2,
+      "supportedSchemaVersions": [1]
+    }
+  }
+}
+```
+
+The corresponding report error uses `documentType: "report"` and supported `[2]`.
+Wire validation checks the declared envelope, positive revisions/sequences,
+JSON-object content, attachment/hash references and existing size/count/media
+limits. Every `attachment:<hash>` in content must be enumerated in `refs.blobs`;
+all referenced blobs and designs must exist in the authorized organization before
+a new publication. JSON content is retained losslessly; desktop semantic decoders
+must separately validate the local model before editing or rendering.
+
+Design append/election locks the design and checks both the current preferred
+document and the proposed winner against the reader and server's supported
+schemas **inside the transaction**. Report updates and snapshot creation likewise
+serialize per report (including snapshots arriving before the head) and check
+the current head. Knowing the latest generation/revision alone is insufficient:
+an incompatible head returns 426 `upgrade_required`, with no mutation.
+Corrupt heads cannot be overwritten through these operations either.
+
+Identical design upload-ID retries still acknowledge the original saved version
+without re-electing it, even if the head has since become incompatible. Reader
+headers never rewrite a pending envelope or its hash. Report snapshot retries
+must match the saved schema, content, references, note, commit and supplied capture
+time, not merely reuse its claimed content hash. Unknown schemas are never decoded
+using a supported validator.
+
+The website report library and viewer also guard their direct database reads:
+unsupported/invalid rows remain visible with version details and cannot open;
+snapshot selectors retain disabled entries and supported snapshots remain usable.
+This does not implement the desktop UI or its persistence guards.
+
+Before any new format is enabled, release compatible readers, coordinate legacy
+upgrade behavior, add that format's validator and regression tests, and test
+mixed histories and incompatible-head races. Do not add incompatible content
+fields to an existing schema merely because TypeScript calls them optional.
 
 ## 6. Delivery phases
 

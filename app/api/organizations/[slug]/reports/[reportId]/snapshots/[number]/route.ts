@@ -1,5 +1,9 @@
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
+import { requireWebsiteReport } from "@/lib/report-reader";
+import { DocumentError, parseStoredJson } from "@/lib/cloud-push/document-compatibility";
+import { errorResponse } from "@/lib/cloud-push/common";
+import { reportDocument } from "@/lib/cloud-push/reports";
 
 export async function GET(
   _request: Request,
@@ -56,21 +60,16 @@ export async function GET(
     });
   }
 
-  let reportContent: any = null;
+  let reportContent;
   try {
-    reportContent = JSON.parse(snapshot.report);
-  } catch {
-    reportContent = null;
+    requireWebsiteReport(snapshot);
+    reportContent = reportDocument(snapshot);
+  } catch (error) {
+    if (error instanceof DocumentError) return errorResponse(error.status, error.code, error.message, error.details);
+    throw error;
   }
 
-  let commitData: any = null;
-  if (snapshot.commit) {
-    try {
-      commitData = JSON.parse(snapshot.commit);
-    } catch {
-      commitData = null;
-    }
-  }
+  const commitData = snapshot.commit === null ? null : parseStoredJson(snapshot.commit, snapshot.id);
 
   return new Response(
     JSON.stringify({

@@ -303,6 +303,24 @@ those fixtures afterward, and writes JSON results with PNG attachments to
 
 ## Database changes
 
+### JSON document compatibility
+
+The backend compatibility extension and website report guards are implemented
+but **not deployed**. It adds explicit report/design schema capabilities,
+negotiated reader headers, metadata-first discovery/history with per-item
+compatibility states, and transactional guards against replacing an incompatible
+head. Legacy readers use fixed schema defaults and receive explicit upgrade
+errors for incompatible records rather than filtered or downgraded documents.
+Corrupt content is reported as invalid instead of empty.
+
+Design wire schema 1 and report wire schema 2 remain the only accepted formats.
+No migration or new format is introduced. Original immutable content/hashes and
+design retry identities are preserved. The website disables unsupported/invalid
+report and snapshot content; local desktop SQLite, native/MCP, offline and
+per-record upgrade controls must be implemented in the desktop repository.
+See the [compatibility contract](docs/desktop-api-integration.md#55-json-document-compatibility-implemented-not-deployed)
+for the capability/reader protocol and rollout order.
+
 ### Diagram versions and preferred cloud copy
 
 Diagram sync does not merge documents. Each accepted push saves an immutable

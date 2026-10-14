@@ -1,116 +1,77 @@
-import {
-  authenticateOrgMember,
-  corsPreflightResponse,
-  jsonResponse,
-} from "@/lib/cloud-push/common";
+import { z } from "zod";
+import { corsPreflightResponse, jsonResponse } from "@/lib/cloud-push/common";
+import { designPage, designRequest } from "@/lib/cloud-push/design-api";
+import { parseStoredJson, readerCapabilities, validateStored } from "@/lib/cloud-push/document-compatibility";
+import { reportCompatibility, reportDocument } from "@/lib/cloud-push/reports";
 import { db } from "@/lib/db/client";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ orgId: string }> }
-) {
+const summarySchema = z.looseObject({
+  title: z.string().optional(), narrative: z.string().optional(),
+  stats: z.looseObject({}).optional(),
+  flags: z.array(z.looseObject({ severity: z.string().optional() })).optional(),
+  shots: z.record(z.string(), z.unknown()).optional(),
+  visual: z.looseObject({ scenarios: z.array(z.unknown()).optional() }).optional(),
+  map: z.looseObject({ nodes: z.array(z.unknown()).optional() }).optional(),
+  result: z.looseObject({ flows: z.array(z.unknown()).optional() }).optional(),
+});
+
+export async function GET(request: Request, { params }: { params: Promise<{ orgId: string }> }) {
   const { orgId } = await params;
-  const authResult = await authenticateOrgMember(request, orgId);
-  if ("error" in authResult) return authResult.error;
-
-  const reports = await db
-    .selectFrom("report")
-    .select([
-      "id",
-      "projectName",
-      "schemaVersion",
-      "revision",
-      "contentHash",
-      "report",
-      "createdAt",
-      "updatedAt",
-    ])
-    .where("organizationId", "=", orgId)
-    .orderBy("updatedAt", "desc")
-    .execute();
-
-  const snapshots = await db
-    .selectFrom("reportSnapshot")
-    .select([
-      "id",
-      "reportId",
-      "number",
-      "takenAt",
-      "note",
-      "commit",
-      "schemaVersion",
-      "contentHash",
-    ])
-    .where("organizationId", "=", orgId)
-    .orderBy("number", "asc")
-    .execute();
-
-  const snapshotsByReport = new Map<string, typeof snapshots>();
-  for (const s of snapshots) {
-    const list = snapshotsByReport.get(s.reportId) ?? [];
-    list.push(s);
-    snapshotsByReport.set(s.reportId, list);
-  }
-
-  const items = reports.map((r) => {
-    let reportData: any = {};
-    try {
-      reportData = JSON.parse(r.report);
-    } catch {
-      reportData = {};
+  return designRequest(request, orgId, async () => {
+    const reader = readerCapabilities(request, "report");
+    const { limit, cursor } = designPage(request);
+    let query = db.selectFrom("report").selectAll().where("organizationId", "=", orgId);
+    if (reader.explicit) {
+      query = query.orderBy("id", "asc").limit(limit + 1);
+      if (cursor) query = query.where("id", ">", cursor);
+    } else {
+      query = query.orderBy("updatedAt", "desc");
     }
-
-    const reportSnaps = snapshotsByReport.get(r.id) ?? [];
-    const latestSnap = reportSnaps[reportSnaps.length - 1];
-    let latestCommit: any = null;
-    if (latestSnap?.commit) {
-      try {
-        latestCommit = JSON.parse(latestSnap.commit);
-      } catch {
-        latestCommit = null;
-      }
-    }
-
-    const flags = Array.isArray(reportData.flags) ? reportData.flags : [];
-    const flagCounts = {
-      high: flags.filter((f: any) => f.severity === "high").length,
-      medium: flags.filter((f: any) => f.severity === "medium").length,
-      low: flags.filter((f: any) => f.severity === "low").length,
-    };
-
-    return {
-      id: r.id,
-      name: reportData.title || r.projectName || r.id,
-      projectName: r.projectName,
-      title: reportData.title,
-      savedAt: r.updatedAt.toISOString(),
-      stats: reportData.stats ?? { files: 0, additions: 0, deletions: 0 },
-      snapshots: {
-        count: reportSnaps.length,
-        latest: latestSnap
-          ? {
-              number: latestSnap.number,
-              takenAt: latestSnap.takenAt.toISOString(),
-              commit: latestCommit,
-            }
-          : undefined,
-      },
-      info: {
-        preview: reportData.narrative?.slice(0, 200) || "",
-        flags: flagCounts,
-        shots: Object.keys(reportData.shots ?? {}).length,
-        visualScenarios: reportData.visual?.scenarios?.length ?? 0,
-        mapNodes: reportData.map?.nodes?.length ?? 0,
-        flows: reportData.result?.flows?.length ?? 0,
-        base: reportData.base,
-        head: reportData.head,
-      },
-    };
-  });
-
-  return jsonResponse({
-    success: true,
-    reports: items,
+    const rows = await query.execute();
+    const page = reader.explicit ? rows.slice(0, limit) : rows;
+    const ids = page.map((row) => row.id);
+    const snapshots = ids.length ? await db.selectFrom("reportSnapshot")
+      .selectAll()
+      .where("organizationId", "=", orgId).where("reportId", "in", ids).orderBy("number", "asc").execute() : [];
+    const reports = page.map((row) => {
+      const state = reportCompatibility(row, reader);
+      const history = snapshots.filter((snapshot) => snapshot.reportId === row.id);
+      const latest = history.at(-1);
+      const latestCompatibility = latest ? reportCompatibility(latest, reader) : undefined;
+      const metadata = {
+        id: row.id, name: row.projectName, projectName: row.projectName,
+        ...(reader.explicit ? { schemaVersion: row.schemaVersion, revision: row.revision, contentHash: row.contentHash } : {}),
+        savedAt: row.updatedAt.toISOString(),
+        snapshots: { count: history.length, latest: latest ? {
+          number: latest.number, takenAt: latest.takenAt.toISOString(),
+          commit: latestCompatibility?.status === "supported" && latest.commit !== null ? parseStoredJson(latest.commit, latest.id) : null,
+          ...(reader.explicit ? { id: latest.id, schemaVersion: latest.schemaVersion, compatibility: latestCompatibility } : {}),
+        } : undefined },
+        ...(reader.explicit || state.status === "invalid" ? { compatibility: state } : {}),
+      };
+      if (reader.explicit || state.status !== "supported") return metadata;
+      const content = validateStored(summarySchema, reportDocument(row, reader), row.id);
+      const flags = content.flags ?? [];
+      return {
+        ...metadata, name: content.title ?? row.projectName, title: content.title,
+        stats: content.stats ?? { files: 0, additions: 0, deletions: 0 },
+        info: {
+          preview: content.narrative?.slice(0, 200) ?? "",
+          flags: {
+            high: flags.filter((flag) => flag.severity === "high").length,
+            medium: flags.filter((flag) => flag.severity === "medium").length,
+            low: flags.filter((flag) => flag.severity === "low").length,
+          },
+          shots: Object.keys(content.shots ?? {}).length, visualScenarios: content.visual?.scenarios?.length ?? 0,
+          mapNodes: content.map?.nodes?.length ?? 0, flows: content.result?.flows?.length ?? 0,
+          base: content.base, head: content.head,
+        },
+      };
+    });
+    return jsonResponse({
+      success: true, reports,
+      ...(reader.explicit ? { nextCursor: rows.length > limit ? page.at(-1)!.id : null } : {}),
+    });
   });
 }
 

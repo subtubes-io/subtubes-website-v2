@@ -1,10 +1,14 @@
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db/client";
+import { SUPPORTED_DOCUMENT_SCHEMAS } from "./document-compatibility";
 export { computeSha256, canonicalJsonStringify, computeCanonicalContentHash } from "./hash";
 
 export const LIMITS = {
-  supportedSchemaVersions: [2],
-  supportedDesignSchemaVersions: [1],
+  supportedSchemaVersions: SUPPORTED_DOCUMENT_SCHEMAS.report,
+  supportedReportSchemaVersions: SUPPORTED_DOCUMENT_SCHEMAS.report,
+  supportedDesignSchemaVersions: SUPPORTED_DOCUMENT_SCHEMAS.design,
+  documentCompatibilityMetadata: true,
+  documentReaderCapabilities: true,
   designSnapshotMetadata: true,
   maxReportDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxSnapshotDocumentBytes: 10 * 1024 * 1024, // 10 MiB
@@ -52,7 +56,7 @@ export function corsPreflightResponse() {
     headers: {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
-      "Access-Control-Allow-Headers": "Authorization, Content-Type, If-Match, If-None-Match",
+      "Access-Control-Allow-Headers": "Authorization, Content-Type, If-Match, If-None-Match, X-Subtubes-Design-Schema-Versions, X-Subtubes-Report-Schema-Versions",
     },
   });
 }

@@ -2,6 +2,7 @@ import { corsPreflightResponse, jsonResponse } from "@/lib/cloud-push/common";
 import { designRequest } from "@/lib/cloud-push/design-api";
 import { DesignError, versionDocument } from "@/lib/cloud-push/designs";
 import { db } from "@/lib/db/client";
+import { readerCapabilities } from "@/lib/cloud-push/document-compatibility";
 
 export async function GET(
   request: Request,
@@ -13,7 +14,7 @@ export async function GET(
       .where("id", "=", versionId).where("designId", "=", designId)
       .where("organizationId", "=", orgId).executeTakeFirst();
     if (!version) throw new DesignError(404, "not_found", "Version not found in this design.");
-    return jsonResponse({ success: true, designId, version: versionDocument(version) });
+    return jsonResponse({ success: true, designId, version: versionDocument(version, readerCapabilities(request, "design")) });
   });
 }
 

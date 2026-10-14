@@ -4,7 +4,9 @@ import { SiteHeader } from "@/components/site-header";
 import { ReportViewer } from "@/components/report/report-viewer";
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
-import type { Report, ReportSnapshotMeta } from "@subtubes/report-ui";
+import { readWebsiteReport } from "@/lib/report-reader";
+import type { WebsiteSnapshotMeta } from "@/components/report/report-viewer";
+import Link from "next/link";
 
 async function ReportDetails({
   params,
@@ -40,47 +42,42 @@ async function ReportDetails({
 
   if (!reportRow) notFound();
 
-  let rawReport: unknown;
-  try {
-    rawReport = JSON.parse(reportRow.report);
-  } catch {
-    notFound();
-  }
-
-  if (!rawReport || typeof rawReport !== "object") {
-    notFound();
+  const decoded = readWebsiteReport(reportRow);
+  if (!decoded.report) {
+    return (
+      <section className="dashboard-wrap">
+        <h1 className="dashboard-heading">{decoded.compatibility.status === "unsupported" ? "Requires a newer app" : "Invalid document"}</h1>
+        <p>{reportRow.projectName} · Wire schema {reportRow.schemaVersion} · Revision {reportRow.revision}</p>
+        <p>{decoded.compatibility.message}</p>
+        <Link className="button-secondary" href={`/dashboard/organizations/${organization.slug}`}>All reports</Link>
+      </section>
+    );
   }
 
   const snapshotRows = await db
     .selectFrom("reportSnapshot")
-    .select(["id", "reportId", "number", "takenAt", "note", "commit"])
+    .selectAll()
     .where("organizationId", "=", organization.id)
     .where("reportId", "=", reportId)
     .orderBy("number", "asc")
     .execute();
 
-  const snapshotMetas: ReportSnapshotMeta[] = snapshotRows.map((s) => {
-    let commitData: any = undefined;
-    if (s.commit) {
-      try {
-        commitData = JSON.parse(s.commit);
-      } catch {
-        commitData = undefined;
-      }
-    }
+  const snapshotMetas: WebsiteSnapshotMeta[] = snapshotRows.map((s) => {
+    const decoded = readWebsiteReport(s);
     return {
       id: s.id,
       reportId: s.reportId,
       number: s.number,
       takenAt: s.takenAt.toISOString(),
       note: s.note ?? undefined,
-      commit: commitData,
+      commit: decoded.commit,
+      compatibility: decoded.compatibility,
     };
   });
 
   return (
     <ReportViewer
-      report={rawReport as Report}
+      report={decoded.report}
       reportId={reportRow.id}
       projectName={reportRow.projectName}
       slug={organization.slug}

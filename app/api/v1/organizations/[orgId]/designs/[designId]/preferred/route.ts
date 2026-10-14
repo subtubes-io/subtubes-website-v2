@@ -4,6 +4,7 @@ import {
   DesignError, electPreferredVersion, preferredSchema, readDesignBody,
 } from "@/lib/cloud-push/designs";
 import { db } from "@/lib/db/client";
+import { readerCapabilities } from "@/lib/cloud-push/document-compatibility";
 
 export async function PUT(
   request: Request,
@@ -15,7 +16,7 @@ export async function PUT(
     if (!selection.success) {
       throw new DesignError(422, "invalid_document", "versionId and a nonnegative integer expectedHeadGeneration are required.");
     }
-    const result = await electPreferredVersion(db, orgId, designId, userId, selection.data);
+    const result = await electPreferredVersion(db, orgId, designId, userId, selection.data, readerCapabilities(request, "design"));
     return jsonResponse({ success: true, ...result });
   });
 }

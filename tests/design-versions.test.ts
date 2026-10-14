@@ -197,15 +197,20 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
         { ...valid, expectedHeadGeneration: undefined },
         { ...valid, expectedHeadGeneration: -1 },
         { ...valid, expectedHeadGeneration: 1.5 },
-        { ...valid, document: { ...valid.document, schemaVersion: 2 } },
         { ...valid, document: { ...valid.document, refs: { blobs: [42] } } },
         { ...valid, uploadId: "not-an-upload-id" },
       ]) {
         assert.throws(() => parseUpload(invalid), errorCode("invalid_document"));
       }
       assert.throws(() => parseUpload({
+        ...valid, document: { ...valid.document, schemaVersion: 2 },
+      }), errorCode("unsupported_schema_version"));
+      assert.throws(() => parseUpload({
         ...valid, document: { ...valid.document, content: { image: "data:image/png;base64,AA==" } },
       }), errorCode("inline_media"));
+      assert.throws(() => parseUpload({
+        ...valid, document: { ...valid.document, content: { image: `attachment:${"a".repeat(64)}` } },
+      }), errorCode("invalid_document"));
       await assert.rejects(readDesignBody(new Request("http://localhost/", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: "not json",
       })), errorCode("invalid_document"));
@@ -368,6 +373,9 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
       const advertised = await limitValues.json();
       assert.deepEqual(advertised.supportedDesignSchemaVersions, [1]);
       assert.equal(advertised.designSnapshotMetadata, true);
+      assert.deepEqual(advertised.supportedReportSchemaVersions, [2]);
+      assert.equal(advertised.documentCompatibilityMetadata, true);
+      assert.equal(advertised.documentReaderCapabilities, true);
       assert.equal(advertised.maxBlobsPerDesign, 500);
       assert.equal((await history.POST(request("", payload(), ""), context)).status, 401);
       assert.equal((await preferred.PUT(request("", {
@@ -470,6 +478,317 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
         params: Promise.resolve({ orgId: org, designId, versionId: first.savedVersion.id }),
       });
       assert.equal(Object.hasOwn((await legacyExact.json()).version, "snapshot"), false);
+    });
+
+    await t.test("compatibility markers and negotiated readers distinguish invalid from unsupported", async () => {
+      const { readerCapabilities } = await import("../lib/cloud-push/document-compatibility");
+      const { parseReportUpload } = await import("../lib/cloud-push/reports");
+      const base = payload();
+      assert.throws(() => parseReportUpload({
+        schemaVersion: 2, revision: 1, contentHash: "hash",
+        report: { image: `attachment:${"a".repeat(64)}` },
+      }), errorCode("invalid_document"));
+      for (const report of [null, [], "not-a-document"]) {
+        assert.throws(() => parseReportUpload({
+          schemaVersion: 2, revision: 1, contentHash: "hash", report,
+        }), errorCode("invalid_document"));
+      }
+      for (const marker of [undefined, null, "1", 0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        assert.throws(() => parseUpload({
+          ...base, document: { ...base.document, schemaVersion: marker },
+        }), errorCode("invalid_document"));
+        assert.throws(() => parseReportUpload({
+          schemaVersion: marker, revision: 1, contentHash: "existing-contract-hash", report: {},
+        }), errorCode("invalid_document"));
+      }
+      for (const [type, version] of [["design", 2], ["report", 3]] as const) {
+        try {
+          if (type === "design") parseUpload({ ...base, document: { ...base.document, schemaVersion: version } });
+          else parseReportUpload({ schemaVersion: version, revision: 1, contentHash: "hash", report: {} });
+          assert.fail("Expected unsupported schema");
+        } catch (error) {
+          assert.ok(error instanceof DesignError);
+          assert.equal(error.code, "unsupported_schema_version");
+          assert.deepEqual(error.details, {
+            documentType: type, schemaVersion: version, supportedSchemaVersions: type === "design" ? [1] : [2],
+          });
+        }
+      }
+      for (const raw of ["", "0", "1.5", "-1", "1,,2", "9007199254740992", Array(17).fill("1").join(",")]) {
+        assert.throws(() => readerCapabilities(new Request("http://localhost/", {
+          headers: { "X-Subtubes-Design-Schema-Versions": raw },
+        }), "design"), errorCode("invalid_reader_capabilities"));
+      }
+      assert.deepEqual(readerCapabilities(new Request("http://localhost/", {
+        headers: { "X-Subtubes-Design-Schema-Versions": "1, 2,1" },
+      }), "design"), { versions: [1, 2], explicit: true });
+      assert.deepEqual(readerCapabilities(new Request("http://localhost/"), "report"), { versions: [2], explicit: false });
+    });
+
+    await t.test("mixed design metadata stays visible; unsupported and corrupt content cannot be read or elected", async () => {
+      const list = await import("../app/api/v1/organizations/[orgId]/designs/route");
+      const history = await import("../app/api/v1/organizations/[orgId]/designs/[designId]/versions/route");
+      const detail = await import("../app/api/v1/organizations/[orgId]/designs/[designId]/route");
+      const historical = await import("../app/api/v1/organizations/[orgId]/designs/[designId]/versions/[versionId]/route");
+      const id = randomUUID();
+      const originalUpload = payload();
+      const original = await saveDesignVersion(db, org, id, owner, originalUpload);
+      const future = await saveDesignVersion(db, org, id, owner, payload(1, "Future format"));
+      await db.updateTable("designVersion").set({ schemaVersion: 2, content: '{"futureField":true}' })
+        .where("id", "=", future.savedVersion.id).execute();
+      const context = { params: Promise.resolve({ orgId: org, designId: id }) };
+      const request = (aware = true, path = "", sessionToken: string = token) => new Request(`http://localhost/${path}`, {
+        headers: { Authorization: `Bearer ${sessionToken}`, ...(aware ? { "X-Subtubes-Design-Schema-Versions": "1" } : {}) },
+      });
+      const versions = await history.GET(request(true, "?limit=1"), context);
+      assert.equal(versions.status, 200);
+      const page = await versions.json();
+      assert.equal(page.versions[0].schemaVersion, 2);
+      assert.equal(page.versions[0].compatibility.status, "unsupported");
+      assert.equal(page.versions[0].preferred, true);
+      assert.equal(page.nextCursor, "2");
+      const last = await history.GET(request(true, "?limit=1&cursor=2"), context);
+      assert.equal((await last.json()).versions[0].compatibility.status, "supported");
+      assert.equal((await history.GET(request(false), context)).status, 426);
+      const discovery = await list.GET(request(true, "?limit=100"), context);
+      const discovered = (await discovery.json()).designs.find((row: { id: string }) => row.id === id);
+      assert.equal(discovered.schemaVersion, 2);
+      assert.equal(discovered.compatibility.status, "unsupported");
+      assert.equal(Object.hasOwn(discovered, "document"), false);
+      assert.equal((await detail.GET(request(), context)).status, 426);
+      assert.equal((await historical.GET(request(), {
+        params: Promise.resolve({ orgId: org, designId: id, versionId: future.savedVersion.id }),
+      })).status, 426);
+      await assert.rejects(saveDesignVersion(db, org, id, owner, payload(2)), errorCode("upgrade_required"));
+      await assert.rejects(electPreferredVersion(db, org, id, owner, {
+        versionId: original.savedVersion.id, expectedHeadGeneration: 2,
+      }), errorCode("upgrade_required"));
+      const replay = await saveDesignVersion(db, org, id, owner, originalUpload);
+      assert.equal(replay.replayed, true);
+      assert.equal(replay.preferredVersionId, future.savedVersion.id);
+      assert.equal(replay.savedVersion.contentHash, original.savedVersion.contentHash);
+      assert.equal(replay.headGeneration, 2);
+      assert.equal((await history.GET(request(true, "", ""), context)).status, 401);
+      assert.equal((await history.GET(request(), { params: Promise.resolve({ orgId: otherOrg, designId: id }) })).status, 403);
+      const unsupported = await db.selectFrom("designVersion").selectAll()
+        .where("id", "=", future.savedVersion.id).executeTakeFirstOrThrow();
+      assert.equal(unsupported.content, '{"futureField":true}');
+      await db.updateTable("designVersion").set({ schemaVersion: 1, content: "broken" })
+        .where("id", "=", future.savedVersion.id).execute();
+      const corrupt = await history.GET(request(), context);
+      assert.equal((await corrupt.json()).versions[0].compatibility.status, "invalid");
+      const corruptRead = await detail.GET(request(), context);
+      assert.equal(corruptRead.status, 422);
+      assert.equal((await corruptRead.json()).error.code, "invalid_document");
+      await assert.rejects(saveDesignVersion(db, org, id, owner, payload(2)), errorCode("invalid_document"));
+      await db.updateTable("designVersion").set({ content: '{"nodes":[]}', contentHash: "sha256:wrong" })
+        .where("id", "=", future.savedVersion.id).execute();
+      assert.equal((await detail.GET(request(), context)).status, 422);
+      await db.updateTable("designVersion").set({ schemaVersion: 0 })
+        .where("id", "=", future.savedVersion.id).execute();
+      assert.equal((await (await history.GET(request(), context)).json()).versions[0].compatibility.status, "invalid");
+    });
+
+    const waitForBlocked = async (pid: number) => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const waiting = await admin.query("select 1 from pg_stat_activity where $1::int = any(pg_blocking_pids(pid))", [pid]);
+        if (waiting.rowCount) return;
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      assert.fail("Writer did not block on the transaction protecting the head");
+    };
+    await t.test("design push and election recheck incompatible heads after a concurrent schema change", async () => {
+      for (const mode of ["push", "elect"]) {
+        const id = randomUUID();
+        const original = await saveDesignVersion(db, org, id, owner, payload());
+        const candidate = await saveDesignVersion(db, org, id, owner, payload(0, "Candidate"));
+        let waiter: Promise<PromiseSettledResult<unknown>[]> | undefined;
+        await db.transaction().execute(async (tx) => {
+          await tx.selectFrom("design").selectAll().where("id", "=", id).forUpdate().execute();
+          const { rows } = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(tx);
+          const mutation = mode === "push"
+            ? saveDesignVersion(db, org, id, owner, payload(1))
+            : electPreferredVersion(db, org, id, owner, { versionId: candidate.savedVersion.id, expectedHeadGeneration: 1 });
+          waiter = Promise.allSettled([mutation]);
+          await waitForBlocked(rows[0].pid);
+          await tx.updateTable("designVersion").set({ schemaVersion: 2 })
+            .where("id", "=", original.savedVersion.id).execute();
+        });
+        const results = await waiter!;
+        assert.equal(results[0].status, "rejected");
+        if (results[0].status === "rejected") assert.ok(errorCode("upgrade_required")(results[0].reason));
+        const head = await db.selectFrom("design").selectAll().where("id", "=", id).executeTakeFirstOrThrow();
+        assert.equal(head.preferredVersionId, original.savedVersion.id);
+        assert.equal(head.headGeneration, 1);
+        assert.equal(head.versionCount, 2);
+      }
+    });
+
+    await t.test("report publication, immutable retries, mixed metadata, corrupt reads and authorization", async () => {
+      const { parseReportUpload, saveReport, saveReportSnapshot } = await import("../lib/cloud-push/reports");
+      const list = await import("../app/api/v1/organizations/[orgId]/reports/route");
+      const detail = await import("../app/api/v1/organizations/[orgId]/reports/[reportId]/route");
+      const history = await import("../app/api/v1/organizations/[orgId]/reports/[reportId]/snapshots/route");
+      const historical = await import("../app/api/v1/organizations/[orgId]/reports/[reportId]/snapshots/[number]/route");
+      const status = await import("../app/api/v1/organizations/[orgId]/reports/[reportId]/status/route");
+      const reader = { versions: [2], explicit: true };
+      const id = randomUUID();
+      const upload = parseReportUpload({
+        schemaVersion: 2, revision: 1, contentHash: "legacy-report-hash", project: { name: "Report metadata" },
+        report: { title: "Supported", futureExtension: { preserved: true } }, refs: { blobs: [], designs: [] },
+      });
+      await saveReport(db, org, id, owner, upload, reader, null, "*");
+      const snapshot = parseReportUpload({
+        schemaVersion: 2, number: 1, takenAt: "2026-10-13T12:00:00Z", contentHash: "legacy-snapshot-hash",
+        report: { title: "Frozen snapshot", unknownField: [1, 2] }, refs: { blobs: [], designs: [] },
+      }, true);
+      await Promise.all([
+        saveReportSnapshot(db, org, id, owner, snapshot, reader),
+        saveReportSnapshot(db, org, id, owner, snapshot, reader),
+      ]);
+      assert.equal((await db.selectFrom("reportSnapshot").select("id").where("reportId", "=", id).execute()).length, 1);
+      await assert.rejects(saveReportSnapshot(db, org, id, owner, {
+        ...snapshot, report: { title: "Same hash, different bytes" },
+      }, reader), errorCode("snapshot_immutable"));
+      await assert.rejects(saveReportSnapshot(db, org, id, otherUser, snapshot, reader), errorCode("forbidden"));
+      const request = (aware = true, suffix = "", sessionToken: string = token) => new Request(`http://localhost/${suffix}`, {
+        headers: { Authorization: `Bearer ${sessionToken}`, ...(aware ? { "X-Subtubes-Report-Schema-Versions": "2" } : {}) },
+      });
+      const context = { params: Promise.resolve({ orgId: org, reportId: id }) };
+      const read = await detail.GET(request(), context);
+      assert.deepEqual((await read.json()).report, upload.report);
+      const unsupported = await saveReportSnapshot(db, org, id, owner, { ...snapshot, number: 2 }, reader);
+      await db.updateTable("reportSnapshot").set({ schemaVersion: 3, report: '{"newFormat":true}' })
+        .where("reportId", "=", id).where("number", "=", unsupported.number).execute();
+      const metadata = await history.GET(request(true, "?limit=1"), context);
+      const page = await metadata.json();
+      assert.equal(page.snapshots[0].schemaVersion, 3);
+      assert.equal(page.snapshots[0].compatibility.status, "unsupported");
+      assert.equal(Object.hasOwn(page.snapshots[0], "report"), false);
+      assert.equal(page.nextCursor, "2");
+      const last = await history.GET(request(true, "?cursor=2"), context);
+      assert.equal((await last.json()).snapshots[0].compatibility.status, "supported");
+      assert.equal((await history.GET(request(false), context)).status, 426);
+      assert.equal((await historical.GET(request(), {
+        params: Promise.resolve({ orgId: org, reportId: id, number: "2" }),
+      })).status, 426);
+      const awareStatus = await status.GET(request(), context);
+      const statusData = await awareStatus.json();
+      assert.deepEqual(statusData.snapshots, [1, 2]);
+      assert.equal(statusData.snapshotVersions[0].schemaVersion, 2);
+      assert.equal(statusData.snapshotVersions[1].compatibility.status, "unsupported");
+      await db.updateTable("report").set({ schemaVersion: 3, report: '{"future":true}' }).where("id", "=", id).execute();
+      const discovery = await list.GET(request(true, "?limit=100"), context);
+      const found = (await discovery.json()).reports.find((row: { id: string }) => row.id === id);
+      assert.equal(found.schemaVersion, 3);
+      assert.equal(found.compatibility.status, "unsupported");
+      assert.equal(Object.hasOwn(found, "info"), false);
+      assert.equal((await list.GET(request(false), context)).status, 426);
+      assert.equal((await detail.GET(request(), context)).status, 426);
+      await assert.rejects(saveReport(db, org, id, owner, { ...upload, revision: 2 }, reader, "1", null), errorCode("upgrade_required"));
+      await assert.rejects(saveReportSnapshot(db, org, id, owner, { ...snapshot, number: 3 }, reader), errorCode("upgrade_required"));
+      const replay = await saveReportSnapshot(db, org, id, owner, snapshot, reader);
+      assert.equal(replay.contentHash, snapshot.contentHash);
+      assert.equal((await detail.GET(request(true, "", ""), context)).status, 401);
+      assert.equal((await history.GET(request(), { params: Promise.resolve({ orgId: otherOrg, reportId: id }) })).status, 403);
+      await db.updateTable("report").set({ schemaVersion: 2, report: "broken" }).where("id", "=", id).execute();
+      const invalid = await list.GET(request(), context);
+      assert.equal((await invalid.json()).reports.find((row: { id: string }) => row.id === id).compatibility.status, "invalid");
+      assert.equal((await detail.GET(request(), context)).status, 422);
+      await assert.rejects(saveReport(db, org, id, owner, { ...upload, revision: 2 }, reader, "1", null), errorCode("invalid_document"));
+      await db.updateTable("reportSnapshot").set({ schemaVersion: 2, report: "[]" })
+        .where("reportId", "=", id).where("number", "=", 2).execute();
+      const invalidHistory = await history.GET(request(), context);
+      assert.equal((await invalidHistory.json()).snapshots[0].compatibility.status, "invalid");
+      assert.equal((await historical.GET(request(), {
+        params: Promise.resolve({ orgId: org, reportId: id, number: "2" }),
+      })).status, 422);
+      const stored = await db.selectFrom("reportSnapshot").selectAll()
+        .where("reportId", "=", id).where("number", "=", 1).executeTakeFirstOrThrow();
+      assert.equal(stored.contentHash, snapshot.contentHash);
+      assert.deepEqual(JSON.parse(stored.report), snapshot.report);
+      const preservedId = randomUUID();
+      const sparseRefs = parseReportUpload({
+        ...snapshot, refs: { blobs: [] },
+      }, true);
+      await saveReportSnapshot(db, org, preservedId, owner, sparseRefs, reader);
+      await saveReportSnapshot(db, org, preservedId, owner, sparseRefs, reader);
+      const preserved = await db.selectFrom("reportSnapshot").selectAll()
+        .where("reportId", "=", preservedId).executeTakeFirstOrThrow();
+      assert.deepEqual(JSON.parse(preserved.refs), { blobs: [] });
+      const orphanId = randomUUID();
+      await saveReportSnapshot(db, org, orphanId, owner, snapshot, reader);
+      await assert.rejects(saveReport(db, org, orphanId, otherUser, upload, reader, null, "*"), errorCode("forbidden"));
+      const missing = parseReportUpload({
+        ...upload, refs: { blobs: ["a".repeat(64)], designs: [] },
+      });
+      await assert.rejects(saveReport(db, org, randomUUID(), owner, missing, reader, null, "*"), errorCode("missing_blobs"));
+      await assert.rejects(saveReport(db, org, randomUUID(), owner, parseReportUpload({
+        ...upload, refs: { blobs: [], designs: [{ id: randomUUID() }] },
+      }), reader, null, "*"), errorCode("missing_designs"));
+    });
+
+    await t.test("website decoding keeps local payload schema independent from cloud wire schema", async () => {
+      const { readWebsiteReport } = await import("../lib/report-reader");
+      const { reportFixture } = await import("../report-ui/src/fixtures");
+      const row = {
+        id: randomUUID(), organizationId: org, ownerId: owner, projectName: "Website reader",
+        schemaVersion: 2, revision: 1, contentHash: "opaque-report-hash",
+        refs: '{"blobs":[],"designs":[]}', report: JSON.stringify(reportFixture()),
+        createdAt: now, updatedAt: now,
+      };
+      assert.equal(readWebsiteReport(row).compatibility.status, "supported");
+      const legacy = { ...reportFixture(), schemaVersion: undefined };
+      const bytes = JSON.stringify(legacy);
+      const decoded = readWebsiteReport({ ...row, report: bytes });
+      assert.equal(decoded.compatibility.status, "supported");
+      assert.equal(decoded.report?.schemaVersion, 1);
+      assert.equal(JSON.stringify(legacy), bytes);
+      assert.equal(readWebsiteReport({ ...row, schemaVersion: 3 }).compatibility.status, "unsupported");
+      assert.equal(readWebsiteReport({
+        ...row, report: JSON.stringify({ ...reportFixture(), schemaVersion: 2 }),
+      }).compatibility.status, "unsupported");
+      for (const marker of [null, "1", 0, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+        assert.equal(readWebsiteReport({
+          ...row, report: JSON.stringify({ ...reportFixture(), schemaVersion: marker }),
+        }).compatibility.status, "invalid");
+      }
+      assert.equal(readWebsiteReport({ ...row, report: "[]" }).compatibility.status, "invalid");
+      for (const commit of ["broken", "{}"]) {
+        assert.equal(readWebsiteReport({
+          ...row, reportId: row.id, number: 1, takenAt: now, note: null, commit,
+        }).compatibility.status, "invalid");
+      }
+    });
+
+    await t.test("report head updates are CAS-atomic and reject an incompatible head changed during a write", async () => {
+      const { parseReportUpload, saveReport } = await import("../lib/cloud-push/reports");
+      const reader = { versions: [2], explicit: true };
+      const upload = parseReportUpload({ schemaVersion: 2, revision: 1, contentHash: "hash", report: {} });
+      const id = randomUUID();
+      await saveReport(db, org, id, owner, upload, reader, null, "*");
+      const concurrent = await Promise.allSettled([
+        saveReport(db, org, id, owner, { ...upload, revision: 2 }, reader, "1", null),
+        saveReport(db, org, id, owner, { ...upload, revision: 3 }, reader, "1", null),
+      ]);
+      assert.equal(concurrent.filter((result) => result.status === "fulfilled").length, 1);
+      assert.equal(concurrent.filter((result) => result.status === "rejected").length, 1);
+      const raceId = randomUUID();
+      await saveReport(db, org, raceId, owner, upload, reader, null, "*");
+      let waiter: Promise<PromiseSettledResult<unknown>[]> | undefined;
+      await db.transaction().execute(async (tx) => {
+        await tx.selectFrom("report").selectAll().where("id", "=", raceId).forUpdate().execute();
+        const { rows } = await sql<{ pid: number }>`select pg_backend_pid() as pid`.execute(tx);
+        waiter = Promise.allSettled([saveReport(db, org, raceId, owner, { ...upload, revision: 2 }, reader, "1", null)]);
+        await waitForBlocked(rows[0].pid);
+        await tx.updateTable("report").set({ schemaVersion: 3 }).where("id", "=", raceId).execute();
+      });
+      const result = (await waiter!)[0];
+      assert.equal(result.status, "rejected");
+      if (result.status === "rejected") assert.ok(errorCode("upgrade_required")(result.reason));
+      const unchanged = await db.selectFrom("report").selectAll().where("id", "=", raceId).executeTakeFirstOrThrow();
+      assert.equal(unchanged.schemaVersion, 3);
+      assert.equal(unchanged.revision, 1);
     });
 
     await t.test("historical pulls retain downloadable organization-scoped attachments", async () => {

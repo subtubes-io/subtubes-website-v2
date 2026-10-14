@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { Compatibility } from "@/lib/cloud-push/document-compatibility";
 import {
   ListCell,
   ListEmpty,
@@ -18,6 +19,7 @@ import {
 
 export interface OrganizationReportSummary extends SnapshotMeta {
   projectName?: string;
+  compatibility?: Compatibility;
 }
 
 export function OrganizationReportsList({
@@ -86,15 +88,18 @@ export function OrganizationReportsList({
           const flags = item.info?.flags;
           const latest = item.snapshots?.latest;
           const open = () => openReport(item.id);
+          const blocked = item.compatibility && item.compatibility.status !== "supported";
+          const status = item.compatibility?.status === "unsupported" ? "Requires a newer app" : "Invalid document";
 
           return (
-            <ListRow key={item.id} data-id={item.id} onOpen={open}>
+            <ListRow key={item.id} data-id={item.id} onOpen={blocked ? undefined : open}>
               <NameCell
-                name={<OpenName name={item.name} onOpen={open} />}
-                detail={item.projectName && item.projectName !== item.name ? item.projectName : undefined}
+                name={<OpenName name={item.name} onOpen={open} disabled={Boolean(blocked)} />}
+                detail={blocked ? `${status} · wire schema ${item.compatibility?.schemaVersion}` :
+                  item.projectName && item.projectName !== item.name ? item.projectName : undefined}
               />
               <ListCell className="list-changes">
-                {item.stats ? (
+                {blocked ? <span>{status}</span> : item.stats ? (
                   <span>
                     {item.stats.files} {item.stats.files === 1 ? "file" : "files"} · +
                     {item.stats.additions} −{item.stats.deletions}
@@ -102,15 +107,15 @@ export function OrganizationReportsList({
                 ) : (
                   <span className="loc">—</span>
                 )}
-                {flags && (flags.high || flags.medium || flags.low) ? (
+                {!blocked && flags && (flags.high || flags.medium || flags.low) ? (
                   <span className="fb">
                     {!!flags.high && <span className="sev high">{flags.high} high</span>}
                     {!!flags.medium && <span className="sev medium">{flags.medium} med</span>}
                     {!!flags.low && <span className="sev low">{flags.low} low</span>}
                   </span>
-                ) : (
+                ) : !blocked ? (
                   <span className="loc">no flags</span>
-                )}
+                ) : null}
               </ListCell>
               <ListCell className="list-snapshots">
                 {item.snapshots?.count ? (
@@ -135,13 +140,13 @@ export function OrganizationReportsList({
                 </span>
               </ListCell>
               <ListCell className="list-row-actions">
-                <Link
+                {!blocked && <Link
                   href={`/dashboard/organizations/${slug}/reports/${encodeURIComponent(item.id)}`}
                   className="button-secondary"
                   onClick={(e) => e.stopPropagation()}
                 >
                   View
-                </Link>
+                </Link>}
               </ListCell>
             </ListRow>
           );
