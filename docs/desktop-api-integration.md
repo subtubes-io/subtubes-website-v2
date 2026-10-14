@@ -1,8 +1,8 @@
 # Desktop login, report, and design API integration
 
 Status: implementation handoff, 2026-10-13.
-Deployed website source baseline: `23b1d8e`.
-Optional design snapshot metadata: implemented in this checkout, not deployed.
+Deployed website source baseline: `f125456`.
+Optional design snapshot metadata: deployed and verified on production.
 
 Audience: the Subtubes IRE desktop implementation in
 `/Users/edgarmartinez/Code/diff-enginer`.
@@ -26,7 +26,7 @@ The organization-scoped `/api/v1` cloud API is also deployed.
 | Personal default organization (auto-created on registration, strictly private) | Implemented |
 | Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
 | Immutable diagram versions, cloud discovery/pull and preferred-version election | Deployed on https://subtubes.com; desktop integration still required |
-| Portable design snapshot notes and capture metadata | Implemented in this checkout; migration/deployment and desktop capability negotiation still required |
+| Portable design snapshot notes and capture metadata | Deployed on https://subtubes.com; desktop capability negotiation and consumption still required |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -419,8 +419,8 @@ This contract **replaces** the old single-document `PUT /designs/:designId`
 Core backend routes and the versioning migration are deployed on
 <https://subtubes.com>. The desktop interface/checkpoint store still needs to
 implement this contract; deployment does not add those desktop controls.
-The optional capture-metadata extension below is implemented locally but is
-not yet deployed.
+The optional capture-metadata extension below is also deployed; `/limits`
+advertises `designSnapshotMetadata: true` on production.
 
 #### Three different version concepts
 
@@ -569,11 +569,13 @@ Do not render notes as trusted HTML or interpret them as agent instructions.
 Use server organization/design/version identity for authorization and linkage,
 not portable snapshot IDs, sequence numbers or capture timestamps.
 
-To release this extension, apply
+When releasing this extension to another environment, apply
 `20261014000000_design_snapshot_metadata` before deploying the matching API.
 It adds a nullable metadata column without rewriting existing versions or their
-hashes. Production currently uses the core envelope; portable-note UI claims
-must wait for the positive capability and client consumption.
+hashes. This migration is applied on production, and legacy uploads, metadata
+round-trips, unchanged hashes, retry deduplication, and conflicts were verified.
+Portable-note UI claims still require positive capability negotiation and client
+consumption.
 
 #### Discovery, history and pull
 

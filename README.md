@@ -323,12 +323,12 @@ Desktop clients still need to implement this contract and their local
 interface/checkpoint store. Production push, competing-version retention,
 election, pull, history, and retry behavior were verified with temporary data.
 
-An additive, capability-gated design snapshot metadata extension is implemented
-in this checkout but **not deployed**. It preserves optional capture identity,
+An additive, capability-gated design snapshot metadata extension is deployed
+on <https://subtubes.com>. It preserves optional capture identity,
 notes, reason, UTC capture time and source revision with each immutable version.
 Existing envelopes and document hashes remain unchanged. Apply
-`20261014000000_design_snapshot_metadata` before deploying the matching server;
-only then should desktop clients negotiate `designSnapshotMetadata: true`
+`20261014000000_design_snapshot_metadata` before deploying the matching server
+in another environment. Desktop clients should negotiate `designSnapshotMetadata: true`
 from `/limits` and send the optional envelope field. See the
 [metadata contract](docs/desktop-api-integration.md#optional-portable-snapshot-metadata-capability-gated-extension).
 Metadata-free versions omit the field; capture provenance is never fabricated.
