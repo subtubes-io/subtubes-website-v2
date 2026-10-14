@@ -144,6 +144,7 @@ interface DesignVersionTable {
   revision: number;
   content: string;
   refs: string;
+  snapshot: string | null;
   createdAt: Generated<Date>;
 }
 

@@ -32,6 +32,7 @@ export async function GET(request: Request, { params }: Context) {
         "designVersion.number", "designVersion.uploadId", "designVersion.contentHash",
         "designVersion.authorId", "designVersion.deviceLabel", "designVersion.name",
         "designVersion.kind", "designVersion.schemaVersion", "designVersion.revision",
+        "designVersion.snapshot",
         "designVersion.createdAt", "design.preferredVersionId", "design.headGeneration",
       ]).where("design.id", "=", designId).where("design.organizationId", "=", orgId)
       .orderBy("designVersion.number", "desc").limit(limit + 1);

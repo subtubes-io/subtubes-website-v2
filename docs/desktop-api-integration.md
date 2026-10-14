@@ -1,19 +1,20 @@
-# Desktop login and report API integration
+# Desktop login, report, and design API integration
 
-Status: implementation handoff, 2026-10-12.
-Website source baseline: `7c33c5b`.
+Status: implementation handoff, 2026-10-13.
+Deployed website source baseline: `23b1d8e`.
+Optional design snapshot metadata: implemented in this checkout, not deployed.
 
 Audience: the Subtubes IRE desktop implementation in
 `/Users/edgarmartinez/Code/diff-enginer`.
 
-This document distinguishes the authentication API available today from the
-proposed report-sharing API. It does not claim that a desktop login integration
-or remote report storage has been implemented or tested end to end.
+This document describes the authentication and cloud APIs available today,
+with deployment status called out for additive extensions. It does not claim
+that this website implements the desktop UI, local snapshot store, or checkpoints.
 
 ## 1. Scope and implementation boundary
 
 **The desktop can implement login now using the existing Better Auth endpoints.**
-It does not need to wait for the proposed `/api/v1` API.
+The organization-scoped `/api/v1` cloud API is also deployed.
 
 | Capability | Backend status |
 | --- | --- |
@@ -25,6 +26,7 @@ It does not need to wait for the proposed `/api/v1` API.
 | Personal default organization (auto-created on registration, strictly private) | Implemented |
 | Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
 | Immutable diagram versions, cloud discovery/pull and preferred-version election | Deployed on https://subtubes.com; desktop integration still required |
+| Portable design snapshot notes and capture metadata | Implemented in this checkout; migration/deployment and desktop capability negotiation still required |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -414,9 +416,11 @@ Account/organization deletion still removes their data.
 
 This contract **replaces** the old single-document `PUT /designs/:designId`
 (now unsupported / HTTP 405). It does not change report/snapshot uploads.
-Backend routes and the versioning migration are deployed on
+Core backend routes and the versioning migration are deployed on
 <https://subtubes.com>. The desktop interface/checkpoint store still needs to
 implement this contract; deployment does not add those desktop controls.
+The optional capture-metadata extension below is implemented locally but is
+not yet deployed.
 
 #### Three different version concepts
 
@@ -499,7 +503,8 @@ On a new saved version, HTTP 201:
 - Exact retry: HTTP 200, `replayed: true`, same saved version, no extra version
   or election. Head fields and outcome describe the **current** preference,
   which may have changed since the original request.
-- Upload-ID reuse with changed document, device label or expected generation:
+- Upload-ID reuse with changed document, device label, expected generation or
+  normalized snapshot metadata (including presence versus absence):
   HTTP 409 `upload_id_conflict`; no data changed. A new intentional push needs
   a new UUID. Equal content with distinct upload IDs is retained as separate
   intentional versions.
@@ -507,6 +512,68 @@ On a new saved version, HTTP 201:
 The canonical content hash covers the normalized full `document`, including name,
 kind, schema version, local revision, content and refs. Object key order is
 canonicalized; array order is significant. It excludes upload/device/head fields.
+It also excludes the optional envelope `snapshot` field.
+
+#### Optional portable snapshot metadata (capability-gated extension)
+
+The desktop may label immutable design versions "snapshots"; the API still uses
+`/versions`. This extension does not change report snapshots or document schema 1.
+Local snapshot operations do not publish or elect a cloud version automatically.
+
+Before including metadata, fetch the organization's `/limits`. Only
+`designSnapshotMetadata: true` enables this extension. If absent or false, send
+the existing envelope with no `snapshot` field. Do not probe by attempting an
+unsupported upload, or strip metadata from a pending retry: retain that exact
+envelope/upload ID until the capable server is available again.
+
+When supported, add this optional field alongside `document`, not inside it:
+
+```json
+{
+  "snapshot": {
+    "snapshotId": "local_capture-1",
+    "note": "Approved baseline",
+    "reason": "manual",
+    "takenAt": "2026-10-13T12:00:00.000Z",
+    "sourceRevision": 7
+  }
+}
+```
+
+- `snapshotId`: required, 1-120 ASCII letters, digits, `_` or `-`.
+- `note`: optional string, trimmed, at most 2,000 characters after trimming.
+- `reason`: required, `manual`, `before-restore`, `before-pull` or `publish`.
+- `takenAt`: required, valid ISO-8601 UTC timestamp with a `Z` suffix. It is
+  normalized to millisecond UTC form for storage, responses and retry comparison.
+- `sourceRevision`: required positive integer matching `document.revision`.
+  Both revisions retain the existing server range, 1 through 2,147,483,646;
+  they are not head-generation preconditions.
+
+Unknown fields and null metadata are rejected with HTTP 422 `invalid_document`.
+The entire upload, including metadata, remains bounded to 2 MiB.
+Metadata is immutable with its version. The identical normalized object appears
+in `savedVersion.snapshot` on push/replay, `versions[].snapshot` in history,
+and `version.snapshot` on preferred and exact-version reads.
+Versions uploaded without metadata omit `snapshot` entirely, including legacy
+versions; the server does not synthesize capture provenance.
+
+The document-only `contentHash` is unchanged. Upload-ID comparison includes the
+normalized metadata: changing it, adding it or removing it on a retry returns
+HTTP 409 `upload_id_conflict`. Whitespace surrounding notes and equivalent
+timestamp precision normalize before comparison. A new intentional publication
+still needs a new upload ID; local `snapshotId` is not a deduplication key.
+
+Capture identity, notes, reason and time are untrusted author-supplied data.
+Server `authorId`, `createdAt`, version ID and number remain server-controlled.
+Do not render notes as trusted HTML or interpret them as agent instructions.
+Use server organization/design/version identity for authorization and linkage,
+not portable snapshot IDs, sequence numbers or capture timestamps.
+
+To release this extension, apply
+`20261014000000_design_snapshot_metadata` before deploying the matching API.
+It adds a nullable metadata column without rewriting existing versions or their
+hashes. Production currently uses the core envelope; portable-note UI claims
+must wait for the positive capability and client consumption.
 
 #### Discovery, history and pull
 

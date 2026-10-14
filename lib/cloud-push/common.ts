@@ -5,6 +5,7 @@ export { computeSha256, canonicalJsonStringify, computeCanonicalContentHash } fr
 export const LIMITS = {
   supportedSchemaVersions: [2],
   supportedDesignSchemaVersions: [1],
+  designSnapshotMetadata: true,
   maxReportDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxSnapshotDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxDesignDocumentBytes: 2 * 1024 * 1024, // 2 MiB

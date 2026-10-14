@@ -5,12 +5,13 @@ import { loadEnvConfig } from "@next/env";
 import { Kysely, PostgresDialect, sql } from "kysely";
 import { Pool } from "pg";
 import type { Database } from "../lib/db/types";
-import { computeSha256 } from "../lib/cloud-push/hash";
+import { computeCanonicalContentHash, computeSha256 } from "../lib/cloud-push/hash";
 import { up as initialSchema } from "../migrations/20261012000000_initial_schema";
 import { up as profileLinks } from "../migrations/20261012000100_profile_links";
 import { up as cloudReports } from "../migrations/20261012000200_cloud_reports";
 import { up as removeSnapshotFk } from "../migrations/20261012000201_remove_snapshot_report_fk";
 import { up as versionSchema, down as rollbackVersions } from "../migrations/20261013000000_design_versions";
+import { up as snapshotSchema, down as rollbackSnapshotMetadata } from "../migrations/20261014000000_design_snapshot_metadata";
 
 loadEnvConfig(process.cwd());
 
@@ -36,6 +37,13 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
   const token = randomUUID();
   const readerToken = randomUUID();
   const legacyDesign = randomUUID();
+  const legacyUpload = {
+    uploadId: randomUUID(), expectedHeadGeneration: 0,
+    document: {
+      name: "Existing design", kind: "system", schemaVersion: 1, revision: 7,
+      content: { nodes: [] }, refs: { blobs: [] },
+    },
+  };
   const now = new Date();
   try {
     await database.transaction().execute(async (tx) => {
@@ -54,10 +62,17 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
         values (${legacyDesign}, ${org}, ${owner}, 'Existing design', 'system', 1, 7,
         '{"nodes":[]}', '{"blobs":[]}')`.execute(tx);
       await versionSchema(tx);
+      await sql`update "designVersion" set "uploadId" = ${legacyUpload.uploadId},
+        "requestHash" = ${computeCanonicalContentHash(legacyUpload)}
+        where "designId" = ${legacyDesign}`.execute(tx);
+      const before = await sql<Record<string, unknown>>`select * from "designVersion"`.execute(tx);
+      await snapshotSchema(tx);
+      const after = await sql`select * from "designVersion"`.execute(tx);
+      assert.deepEqual(after.rows, before.rows.map((row) => ({ ...row, snapshot: null })));
     });
 
     const {
-      parseUpload, saveDesignVersion, electPreferredVersion, readDesignBody, DesignError,
+      parseUpload, saveDesignVersion, electPreferredVersion, readDesignBody, versionMetadata, DesignError,
     } = await import("../lib/cloud-push/designs");
     appDb = (await import("../lib/db/client")).db;
     const payload = (expectedHeadGeneration = 0, name = "Computer A", uploadId = randomUUID()) => parseUpload({
@@ -79,7 +94,101 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
       assert.equal(version.name, "Existing design");
       assert.deepEqual(JSON.parse(version.content), { nodes: [] });
       assert.deepEqual(JSON.parse(version.refs), { blobs: [] });
+      assert.equal(version.snapshot, null);
+      assert.equal(Object.hasOwn(versionMetadata(version), "snapshot"), false);
+      const replay = await saveDesignVersion(db, org, legacyDesign, owner, parseUpload(legacyUpload));
+      assert.equal(replay.replayed, true);
+      assert.equal(replay.savedVersion.id, version.id);
+      assert.equal(replay.versionCount, 1);
+      assert.equal(replay.savedVersion.contentHash, computeCanonicalContentHash(legacyUpload.document));
+      assert.equal(Object.hasOwn(replay.savedVersion, "snapshot"), false);
       await assert.rejects(rollbackVersions(), /cannot be discarded/);
+      await assert.rejects(rollbackSnapshotMetadata(), /cannot be discarded/);
+    });
+
+    const capture = {
+      snapshotId: "local_capture-1", note: "  Approved baseline  ", reason: "manual",
+      takenAt: "2026-10-13T12:00:00Z", sourceRevision: 1,
+    };
+    const normalizedCapture = { ...capture, note: "Approved baseline", takenAt: "2026-10-13T12:00:00.000Z" };
+    await t.test("snapshot metadata validates exact fields, bounds, UTC timestamps and source revision", () => {
+      const valid = payload();
+      for (const snapshot of [
+        null, {}, { ...capture, snapshotId: "" }, { ...capture, snapshotId: "a".repeat(121) },
+        { ...capture, snapshotId: "../capture" }, { ...capture, snapshotId: "non-ascii-\u00e9" },
+        { ...capture, note: "a".repeat(2_001) }, { ...capture, note: null },
+        { ...capture, reason: "automatic" }, { ...capture, reason: undefined },
+        { ...capture, takenAt: "2026-02-30T12:00:00Z" },
+        { ...capture, takenAt: "2026-10-13T12:00:00+00:00" },
+        { ...capture, takenAt: "2026-10-13T12:00:00" }, { ...capture, takenAt: "not-a-date" },
+        { ...capture, takenAt: undefined }, { ...capture, sourceRevision: 0 },
+        { ...capture, sourceRevision: 1.5 }, { ...capture, sourceRevision: 2 },
+        { ...capture, sourceRevision: Number.MAX_SAFE_INTEGER + 1 },
+        { ...capture, authorId: owner }, { ...capture, organizationId: otherOrg },
+        { ...capture, createdAt: now.toISOString() },
+      ]) {
+        assert.throws(() => parseUpload({ ...valid, snapshot }), errorCode("invalid_document"));
+      }
+      const boundary = parseUpload({
+        ...valid, snapshot: { ...capture, snapshotId: "a".repeat(120), note: "a".repeat(2_000) },
+      });
+      assert.equal(boundary.snapshot?.snapshotId.length, 120);
+      assert.equal(boundary.snapshot?.note?.length, 2_000);
+      for (const reason of ["manual", "before-restore", "before-pull", "publish"]) {
+        const parsed = parseUpload({ ...valid, snapshot: { ...capture, reason, note: undefined } });
+        assert.equal(parsed.snapshot?.reason, reason);
+        assert.equal(parsed.snapshot?.note, undefined);
+      }
+      assert.deepEqual(parseUpload({ ...valid, snapshot: capture }).snapshot, normalizedCapture);
+    });
+
+    await t.test("metadata is immutable, normalized for retries, and separate from document hashing", async () => {
+      const id = randomUUID();
+      const legacy = payload();
+      const first = await saveDesignVersion(db, org, id, owner, legacy);
+      const upload = parseUpload({ ...legacy, uploadId: randomUUID(), expectedHeadGeneration: 1, snapshot: capture });
+      const saved = await saveDesignVersion(db, org, id, owner, upload);
+      assert.deepEqual(saved.savedVersion.snapshot, normalizedCapture);
+      assert.equal(saved.savedVersion.contentHash, first.savedVersion.contentHash);
+      const stored = await db.selectFrom("designVersion").selectAll()
+        .where("id", "=", saved.savedVersion.id).executeTakeFirstOrThrow();
+      assert.deepEqual(JSON.parse(stored.snapshot!), normalizedCapture);
+      assert.equal(stored.requestHash, computeCanonicalContentHash(upload));
+      const replay = await saveDesignVersion(db, org, id, owner, parseUpload({
+        ...upload, snapshot: { ...normalizedCapture, note: " Approved baseline " },
+      }));
+      assert.equal(replay.replayed, true);
+      assert.deepEqual(replay.savedVersion, saved.savedVersion);
+      assert.equal(replay.headGeneration, saved.headGeneration);
+      for (const change of [
+        { snapshotId: "other" }, { note: "Changed" }, { reason: "publish" },
+        { takenAt: "2026-10-13T13:00:00Z" }, { note: undefined },
+      ]) {
+        await assert.rejects(saveDesignVersion(db, org, id, owner, parseUpload({
+          ...upload, snapshot: { ...normalizedCapture, ...change },
+        })), errorCode("upload_id_conflict"));
+      }
+      await assert.rejects(saveDesignVersion(db, org, id, owner, parseUpload({
+        ...upload, snapshot: undefined,
+      })), errorCode("upload_id_conflict"));
+      await assert.rejects(saveDesignVersion(db, org, id, owner, parseUpload({
+        ...upload, document: { ...upload.document, revision: 2 },
+        snapshot: { ...normalizedCapture, sourceRevision: 2 },
+      })), errorCode("upload_id_conflict"));
+      await assert.rejects(saveDesignVersion(db, org, id, owner, parseUpload({
+        ...legacy, snapshot: capture,
+      })), errorCode("upload_id_conflict"));
+      const unchanged = await db.selectFrom("designVersion").selectAll()
+        .where("id", "=", saved.savedVersion.id).executeTakeFirstOrThrow();
+      assert.deepEqual(unchanged, stored);
+      assert.equal((await db.selectFrom("design").select("versionCount").where("id", "=", id)
+        .executeTakeFirstOrThrow()).versionCount, 2);
+      const newCapture = await saveDesignVersion(db, org, id, owner, parseUpload({
+        ...upload, uploadId: randomUUID(), expectedHeadGeneration: saved.headGeneration,
+      }));
+      assert.notEqual(newCapture.savedVersion.id, saved.savedVersion.id);
+      assert.equal(newCapture.savedVersion.contentHash, saved.savedVersion.contentHash);
+      assert.deepEqual(newCapture.savedVersion.snapshot, normalizedCapture);
     });
 
     await t.test("strict validation, body limits, inline images, and missing preconditions", async () => {
@@ -258,6 +367,7 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
       assert.ok(limitValues);
       const advertised = await limitValues.json();
       assert.deepEqual(advertised.supportedDesignSchemaVersions, [1]);
+      assert.equal(advertised.designSnapshotMetadata, true);
       assert.equal(advertised.maxBlobsPerDesign, 500);
       assert.equal((await history.POST(request("", payload(), ""), context)).status, 401);
       assert.equal((await preferred.PUT(request("", {
@@ -314,6 +424,52 @@ test("diagram versions: isolated PostgreSQL migration, API and two-computer conc
         versionId: savedData.savedVersion.id,
       }, token, "PUT"), context)).status, 422);
       assert.equal((await history.OPTIONS()).headers.get("access-control-allow-methods")?.includes("POST"), true);
+
+      const metadataDesignId = randomUUID();
+      const metadataContext = { params: Promise.resolve({ orgId: org, designId: metadataDesignId }) };
+      const metadataUpload = { ...payload(), snapshot: capture };
+      const receipt = await history.POST(request("", metadataUpload), metadataContext);
+      assert.equal(receipt.status, 201);
+      const receiptData = await receipt.json();
+      assert.deepEqual(receiptData.savedVersion.snapshot, normalizedCapture);
+      assert.equal(receiptData.savedVersion.authorId, owner);
+      assert.notEqual(receiptData.savedVersion.createdAt, normalizedCapture.takenAt);
+      const replay = await history.POST(request("", metadataUpload), metadataContext);
+      assert.equal(replay.status, 200);
+      assert.deepEqual((await replay.json()).savedVersion, receiptData.savedVersion);
+      const metadataHistory = await history.GET(request(), metadataContext);
+      assert.deepEqual((await metadataHistory.json()).versions[0].snapshot, normalizedCapture);
+      const metadataPreferred = await detail.GET(request("", undefined, readerToken), metadataContext);
+      assert.deepEqual((await metadataPreferred.json()).version.snapshot, normalizedCapture);
+      const metadataExact = await historical.GET(request(), {
+        params: Promise.resolve({ orgId: org, designId: metadataDesignId, versionId: receiptData.savedVersion.id }),
+      });
+      assert.deepEqual((await metadataExact.json()).version.snapshot, normalizedCapture);
+      const metadataConflict = await history.POST(request("", {
+        ...metadataUpload, snapshot: { ...capture, note: "Changed" },
+      }), metadataContext);
+      assert.equal(metadataConflict.status, 409);
+      assert.equal((await metadataConflict.json()).error.code, "upload_id_conflict");
+      assert.equal((await history.POST(request("", metadataUpload, readerToken), metadataContext)).status, 403);
+      assert.equal((await historical.GET(request(), {
+        params: Promise.resolve({ orgId: otherOrg, designId: metadataDesignId, versionId: receiptData.savedVersion.id }),
+      })).status, 403);
+      assert.equal((await history.POST(request("", {
+        ...metadataUpload, snapshot: { ...capture, sourceRevision: 2 },
+      }), metadataContext)).status, 422);
+
+      const legacyHistory = await history.GET(request(), {
+        params: Promise.resolve({ orgId: org, designId: legacyDesign }),
+      });
+      assert.equal(Object.hasOwn((await legacyHistory.json()).versions[0], "snapshot"), false);
+      const legacyPreferred = await detail.GET(request(), {
+        params: Promise.resolve({ orgId: org, designId: legacyDesign }),
+      });
+      assert.equal(Object.hasOwn((await legacyPreferred.json()).version, "snapshot"), false);
+      const legacyExact = await historical.GET(request(), {
+        params: Promise.resolve({ orgId: org, designId, versionId: first.savedVersion.id }),
+      });
+      assert.equal(Object.hasOwn((await legacyExact.json()).version, "snapshot"), false);
     });
 
     await t.test("historical pulls retain downloadable organization-scoped attachments", async () => {

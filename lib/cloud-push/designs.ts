@@ -7,10 +7,18 @@ import { computeCanonicalContentHash } from "./hash";
 
 const integer = z.number().int().min(0).max(2_147_483_646);
 const identifier = z.string().min(1).max(200);
+const snapshotMetadataSchema = z.object({
+  snapshotId: z.string().min(1).max(120).regex(/^[A-Za-z0-9_-]+$/),
+  note: z.string().trim().max(2_000).optional(),
+  reason: z.enum(["manual", "before-restore", "before-pull", "publish"]),
+  takenAt: z.iso.datetime().transform((value) => new Date(value).toISOString()),
+  sourceRevision: integer.min(1),
+}).strict();
 export const versionUploadSchema = z.object({
   uploadId: z.uuid(),
   expectedHeadGeneration: integer,
   deviceLabel: z.string().trim().min(1).max(100).optional(),
+  snapshot: snapshotMetadataSchema.optional(),
   document: z.object({
     name: z.string().trim().min(1).max(200),
     kind: z.enum(["swimlane", "system"]),
@@ -22,7 +30,14 @@ export const versionUploadSchema = z.object({
         .transform((hashes) => [...new Set(hashes.map(normalizeSha256))].sort()),
     }).strict(),
   }).strict(),
-}).strict();
+}).strict().superRefine((upload, context) => {
+  if (upload.snapshot && upload.snapshot.sourceRevision !== upload.document.revision) {
+    context.addIssue({
+      code: "custom", path: ["snapshot", "sourceRevision"],
+      message: "Snapshot sourceRevision must match document.revision.",
+    });
+  }
+});
 export const preferredSchema = z.object({
   versionId: identifier,
   expectedHeadGeneration: integer,
@@ -97,6 +112,7 @@ export function versionMetadata(version: Omit<Version, "content" | "refs" | "req
     deviceLabel: version.deviceLabel, createdAt: version.createdAt.toISOString(),
     name: version.name, kind: version.kind, schemaVersion: version.schemaVersion,
     revision: version.revision,
+    ...(version.snapshot === null ? {} : { snapshot: snapshotMetadataSchema.parse(JSON.parse(version.snapshot)) }),
   };
 }
 
@@ -168,6 +184,7 @@ export async function saveDesignVersion(
       name: upload.document.name, kind: upload.document.kind,
       schemaVersion: upload.document.schemaVersion, revision: upload.document.revision,
       content: JSON.stringify(upload.document.content), refs: JSON.stringify(upload.document.refs),
+      snapshot: upload.snapshot ? JSON.stringify(upload.snapshot) : null,
     }).returningAll().executeTakeFirstOrThrow();
     const elect = design.headGeneration === upload.expectedHeadGeneration;
     const updated = await tx.updateTable("design").set({
