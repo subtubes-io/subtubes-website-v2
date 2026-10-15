@@ -1,15 +1,12 @@
 "use client";
 import { useState } from "react";
-import { needsConfirmation, type Decision, type DecisionAnchor, type DecisionAnchorInput, type DecisionKind, type HumanDecisionDraft } from "./model/decisions";
+import { type Decision, type DecisionAnchor, type DecisionAnchorInput, type DecisionKind, type HumanDecisionDraft } from "./model/decisions";
 import { reportServices } from "./services";
+import { EditableText } from "./EditableText";
 import { ReportMarkdown } from "./ReportMarkdown";
 
 export const KIND_LABELS: Record<DecisionKind, string> = {
   direction: "Direction", tradeoff: "Trade-off", override: "Overrode the AI", "risk-accepted": "Risk accepted", scope: "Scope", deferred: "Deferred",
-};
-export const KIND_HELP: Record<DecisionKind, string> = {
-  direction: "A person chose the approach", tradeoff: "A person chose between alternatives", override: "A person corrected the AI's proposal",
-  "risk-accepted": "A person knowingly accepted a risk or debt", scope: "A person set or limited the scope", deferred: "A person intentionally postponed work",
 };
 
 export interface DecisionControls {
@@ -64,42 +61,26 @@ export function DecisionComposer({ label, anchors, initial, busy, onSave, onCanc
   </form>;
 }
 
-export function DecisionBadge({ item }: { item: Decision }) {
-  return <>
-    <span className={`chip decision-who decision-${item.madeBy}`}>{item.madeBy === "human" ? "Human decision" : "Agent assumption"}</span>
-    {!isPlain(item) && <span className="chip decision-kind" title={KIND_HELP[item.kind]}>{KIND_LABELS[item.kind]}</span>}
-    {item.status === "superseded" ? <span className="chip decision-state">Superseded</span>
-      : item.confirmed ? <span className="chip decision-state decision-confirmed">Confirmed</span>
-      : needsConfirmation(item) && <span className="chip decision-state decision-pending">Needs confirmation</span>}
-  </>;
-}
-
 export function DecisionCard({ item, controls, compact }: { item: Decision; controls: DecisionControls; compact?: boolean }) {
-  const [editing, setEditing] = useState(false), [error, setError] = useState("");
-  const run = (action: () => Promise<void>) => { setError(""); void action().catch((reason: unknown) => setError(String(reason))); };
-  const disabled = !controls.enabled || controls.busy;
+  const [error, setError] = useState("");
+  const edit = (patch: Parameters<DecisionControls["onEdit"]>[1]) => controls.onEdit(item, patch);
+  const remove = () => { setError(""); void (async () => { if (await reportServices.ask("Delete this decision?", { title: "Delete decision", kind: "warning" })) await controls.onRemove(item); })().catch((reason: unknown) => setError(String(reason))); };
   return <article className={`question-thread decision-card decision-card-${item.madeBy}${item.status === "superseded" ? " decision-superseded" : ""}`} id={`decision-${item.id}`} tabIndex={-1} aria-label={`Decision: ${item.title}`}>
-    <header><DecisionBadge item={item} /></header>
-    {!isPlain(item) && <h4 className="decision-title">{item.title}</h4>}
-    <ReportMarkdown config={{ text: item.decision }} />
-    {!compact && item.rationale && <div className="decision-rationale"><h5>Why</h5><ReportMarkdown config={{ text: item.rationale }} /></div>}
-    {!compact && !!item.alternatives.length && <div className="decision-alternatives"><h5>Alternatives</h5><ul>{item.alternatives.map((alt, index) => <li key={index}><b>{alt.option}</b>{alt.whyNot && <> — {alt.whyNot}</>}</li>)}</ul></div>}
+    {!isPlain(item) && <EditableText label="Decision title" single enabled={controls.enabled} value={item.title} onSave={(title) => edit({ title })}><h4 className="decision-title">{item.title}</h4></EditableText>}
+    <EditableText label="Decision" enabled={controls.enabled} value={item.decision} onSave={(decision) => edit({ decision, ...(isPlain(item) ? { title: titleFrom(decision) } : {}) })}><ReportMarkdown config={{ text: item.decision }} /></EditableText>
+    {!compact && item.rationale && <div className="decision-rationale"><h5>Why</h5><EditableText label="Why" enabled={controls.enabled} value={item.rationale} onSave={(rationale) => edit({ rationale })}><ReportMarkdown config={{ text: item.rationale }} /></EditableText></div>}
+    {!compact && (!!item.alternatives.length || controls.enabled) && <div className="decision-alternatives"><h5>Alternatives</h5><EditableText label="Alternatives" enabled={controls.enabled} value={alternativesToText(item)} placeholder="One per line: option — why not" onSave={(text) => edit({ alternatives: textToAlternatives(text) })}>
+      {item.alternatives.length ? <ul>{item.alternatives.map((alt, index) => <li key={index}><b>{alt.option}</b>{alt.whyNot && <> — {alt.whyNot}</>}</li>)}</ul> : <p className="loc">None recorded. Double-click to add.</p>}
+    </EditableText></div>}
+    {!compact && (!!item.revisitWhen || controls.enabled) && <div className="decision-revisit"><h5>Revisit when</h5><EditableText label="Revisit when" single enabled={controls.enabled} value={item.revisitWhen ?? ""} placeholder="What would make this worth reconsidering?" onSave={(revisitWhen) => edit({ revisitWhen })}>
+      {item.revisitWhen ? <p>{item.revisitWhen}</p> : <p className="loc">Not set. Double-click to add.</p>}
+    </EditableText></div>}
     {item.source.quote && <blockquote className="decision-quote"><span className="loc">{item.source.kind === "chat" ? "Said in the chat" : item.source.kind === "review" ? "From review" : "Source"}:</span> “{item.source.quote}”</blockquote>}
-    {item.source.note && !compact && <p className="loc">{item.source.note}</p>}
-    {!compact && item.revisitWhen && <p className="decision-revisit"><b>Revisit when:</b> {item.revisitWhen}</p>}
     {!!item.anchors.length && <ul className="decision-anchors" aria-label="Applies to">{item.anchors.map((anchor, index) => <li key={index}>
       {controls.onOpenAnchor ? <button type="button" onClick={() => controls.onOpenAnchor!(anchor, item)}>{controls.describeAnchor(anchor)}</button> : <span className="loc">{controls.describeAnchor(anchor)}</span>}
     </li>)}</ul>}
-    <p className="loc decision-meta">Recorded by {item.recordedBy === "agent" ? `${item.agent ?? "an agent"} (agent)` : "you"}{item.confirmed ? " · confirmed by the reviewer" : ""}</p>
-    <div className="question-actions">
-      {!item.confirmed && needsConfirmation(item) && <button type="button" className="primary" disabled={disabled} onClick={() => run(() => controls.onConfirm(item, true))}>{item.madeBy === "agent" ? "Confirm assumption" : "Confirm"}</button>}
-      {item.madeBy === "agent" && item.status === "active" && <button type="button" disabled={disabled} onClick={() => run(() => controls.onEdit(item, { madeBy: "human" }))}>Adopt as my decision</button>}
-      <button type="button" disabled={disabled} onClick={() => setEditing(true)}>Edit</button>
-      <button type="button" disabled={disabled} onClick={() => run(() => controls.onStatus(item, item.status === "active" ? "superseded" : "active"))}>{item.status === "active" ? "Mark superseded" : "Restore"}</button>
-      <button type="button" disabled={disabled} onClick={() => run(async () => { if (await reportServices.ask("Delete this decision?", { title: "Delete decision", kind: "warning" })) await controls.onRemove(item); })}>Delete</button>
-    </div>
+    <div className="question-actions"><button type="button" disabled={!controls.enabled || controls.busy} onClick={remove}>Delete</button></div>
     {error && <p role="alert">{error}</p>}
-    {editing && <DecisionComposer label="Edit decision" anchors={[]} initial={item} busy={controls.busy} onSave={(draft) => controls.onEdit(item, { title: draft.title, kind: draft.kind, decision: draft.decision, alternatives: draft.alternatives })} onCancel={() => setEditing(false)} />}
   </article>;
 }
 

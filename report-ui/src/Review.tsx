@@ -103,10 +103,10 @@ export function Review({ config }: { config: {
   const decisionControls: DecisionControls = {
     decisions: decisions.decisions, enabled: decisions.enabled, busy: decisions.busy, error: decisions.error, focus: decisionFocus,
     onCreate: async (draft) => { await decisions.mutate({ action: "create", ...draft }); },
-    onEdit: async (item, patch) => { await decisions.mutate({ action: "edit", decisionId: item.id, expectedRevision: item.revision, ...patch }); },
-    onConfirm: async (item, confirmed) => { await decisions.mutate({ action: "confirm", decisionId: item.id, expectedRevision: item.revision, confirmed }); },
-    onStatus: async (item, status) => { await decisions.mutate({ action: "setStatus", decisionId: item.id, expectedRevision: item.revision, status }); },
-    onRemove: async (item) => { await decisions.mutate({ action: "remove", decisionId: item.id, expectedRevision: item.revision }); },
+    onEdit: async (item, patch) => { await decisions.mutate({ action: "edit", decisionId: item.id, ...patch }); },
+    onConfirm: async (item, confirmed) => { await decisions.mutate({ action: "confirm", decisionId: item.id, confirmed }); },
+    onStatus: async (item, status) => { await decisions.mutate({ action: "setStatus", decisionId: item.id, status }); },
+    onRemove: async (item) => { await decisions.mutate({ action: "remove", decisionId: item.id }); },
     describeAnchor: (anchor: DecisionAnchor) => anchor.type === "line" ? `${anchor.anchor.path}:${anchor.anchor.line} · ${anchor.anchor.side === "old" ? "Before" : "After"}`
       : anchor.type === "file" ? anchor.file : `${diagramName(anchor.diagramId)} · ${report.swimlanes?.find((diagram) => diagram.id === anchor.diagramId)?.content.nodes.find((node) => node.id === anchor.nodeId)?.title ?? anchor.nodeId}`,
     onOpenAnchor: (anchor: DecisionAnchor, item: Decision) => {
@@ -132,7 +132,7 @@ export function Review({ config }: { config: {
     <main className={`report-view ${tab === "design" ? "canvas-view" : ""}${tab === "changes" ? " changes-view" : ""}`} style={config.inactive ? { display: "none" } : undefined} inert={config.inactive}>
       <section className="view" id="view" inert={reviewOpen}>
         <div id="body">
-          {tab === "summary" && <SummaryPage config={{ report, canAttachDesign: !!(snapshot.id && config.onAttachDesign), onFile: showFile, onView: showView, onOpenDesign: config.onOpenDesign, judgement: decisionControls, qa: qa.walkthroughs, onOpenDiagram: (diagramId) => { setDiagramFocus(diagramId); showView("design"); },
+          {tab === "summary" && <SummaryPage config={{ report, onFile: showFile, onView: showView, onOpenDesign: config.onOpenDesign, qa: qa.walkthroughs,
             edit: { enabled: text.enabled, onTitle: (value) => text.save({ target: "title", text: value }), onNarrative: (value) => text.save({ target: "narrative", text: value }),
               onGroup: (index, value) => text.save({ target: "group", index, text: value }), onFlag: (index, value) => text.save({ target: "flag", index, text: value }) } }} />}
           {tab === "qa" && <QaPage controls={qaControls} onRefresh={qa.refresh} files={report.files.map((file) => file.path)} onOpenFile={showFile} />}

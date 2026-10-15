@@ -37,25 +37,19 @@ test("the Design chapter is one page of diagrams, with no second menu", () => {
   expect(chapterButton("Design").getAttribute("aria-pressed")).toBe("true");
 });
 
-test("the Summary has a card for each attached design; selecting one opens it on the Design page", async () => {
-  const user = userEvent.setup();
-  const diagram = swimlaneFixture();
-  open({ ...reportFixture(), swimlanes: [diagram] });
-  const designs = within(screen.getByRole("region", { name: "Designs" }));
-  const card = designs.getByRole("button", { name: `Open design ${diagram.content.name}` });
-  expect(card.textContent).toContain(diagram.content.kind === "system" ? "System design" : "Swimlane flow");
-  await user.click(card);
-  expect(chapterButton("Design").getAttribute("aria-pressed")).toBe("true");
+test("the Summary has no Designs section, with or without attached designs; the Design page holds them", () => {
+  open({ ...reportFixture(), swimlanes: [swimlaneFixture()] });
+  expect(screen.queryByRole("region", { name: "Designs" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Open design/ })).toBeNull();
+  openChapter("Design");
   expect(screen.getByRole("region", { name: "Report diagrams" })).toBeTruthy();
 });
 
-test("a report with no attached design says so on the Summary and leads to the Design page", async () => {
-  const user = userEvent.setup();
+test("a report with no attached design shows nothing about designs on the Summary", () => {
   open(reportFixture());
-  const designs = within(screen.getByRole("region", { name: "Designs" }));
-  expect(designs.getByText("No designs are attached to this report yet.")).toBeTruthy();
-  await user.click(designs.getByRole("button", { name: "Attach a design" }));
-  expect(chapterButton("Design").getAttribute("aria-pressed")).toBe("true");
+  expect(screen.queryByRole("region", { name: "Designs" })).toBeNull();
+  expect(screen.queryByText("No designs are attached to this report yet.")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Attach a design" })).toBeNull();
 });
 
 test("Design for a report saved without a diagram asks the reviewer to pick one", () => {
@@ -90,20 +84,6 @@ test("a report with no changed files says so", () => {
   open({ ...reportFixture(), files: [] });
   openChapter("Changes");
   expect(screen.getByText("No files changed in this report.")).toBeTruthy();
-});
-
-test("a file link on a judgement call opens the Changes chapter, but from a diagram it opens beside the step", async () => {
-  const user = userEvent.setup();
-  const decision: Decision = {
-    id: "d1", revision: 1, title: "Keep the legacy default", kind: "direction", decision: "Keep it.", rationale: "", alternatives: [],
-    madeBy: "human", recordedBy: "user", source: { kind: "other" }, confirmed: false, status: "active",
-    anchors: [{ type: "file", file: "src/b.ts" }], createdAt: "2026-10-11T20:00:00.000Z", updatedAt: "2026-10-11T20:00:00.000Z",
-  };
-  open({ ...withMap(reportFixture()), decisions: [decision] });
-  await user.click(within(screen.getByRole("region", { name: "Judgement behind this change" })).getByRole("button", { name: "src/b.ts" }));
-  expect(screen.getByRole("region", { name: "Changes" })).toBeTruthy();
-  expect(chapterButton("Changes").getAttribute("aria-pressed")).toBe("true");
-  expect(screen.queryByRole("complementary", { name: "Node details" })).toBeNull();
 });
 
 test("the tabs are inert without a handler", () => {

@@ -8,7 +8,7 @@ export function useDecisions(scope: ReportScope | undefined, initial: Decision[]
   const [decisions, setDecisions] = useState(initial);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const mounted = useRef(false), writing = useRef(false), sequence = useRef(0), lastError = useRef("");
+  const mounted = useRef(false), pending = useRef(0), sequence = useRef(0), lastError = useRef("");
   const notifyRef = useRef(notify);
   notifyRef.current = notify;
   const projectId = scope?.projectId, reportId = scope?.reportId;
@@ -20,11 +20,11 @@ export function useDecisions(scope: ReportScope | undefined, initial: Decision[]
     void reportServices.logAppEvent("error", message).catch((loggingError: unknown) => console.error("Unable to log decision error:", loggingError));
   }, []);
   const refresh = useCallback(async () => {
-    if (!projectId || !reportId || writing.current) return;
+    if (!projectId || !reportId || pending.current > 0) return;
     const token = ++sequence.current;
     try {
       const result = await reportServices.decisions({ action: "list", projectId, reportId });
-      if (mounted.current && token === sequence.current && !writing.current) { setDecisions(result.decisions); setError(""); lastError.current = ""; }
+      if (mounted.current && token === sequence.current && pending.current === 0) { setDecisions(result.decisions); setError(""); lastError.current = ""; }
     } catch (error) { if (mounted.current && token === sequence.current) reportError(error); }
   }, [projectId, reportId, reportError]);
   // Polling shows replies and resolutions an agent saves through MCP while the report is open.
@@ -42,14 +42,13 @@ export function useDecisions(scope: ReportScope | undefined, initial: Decision[]
   }, [refresh]);
   const mutate = async (change: DecisionChange) => {
     if (!projectId || !reportId) throw new Error("Save the report to a project before recording decisions.");
-    if (writing.current) throw new Error("A decision is saving. Try again when it finishes.");
-    writing.current = true; setBusy(true); const token = ++sequence.current;
+    pending.current++; setBusy(true); const token = ++sequence.current;
     try {
       const result = await reportServices.decisions({ ...change, projectId, reportId });
       if (mounted.current && token === sequence.current) { setDecisions(result.decisions); setError(""); lastError.current = ""; }
       return result;
     } catch (error) { if (mounted.current && token === sequence.current) reportError(error); throw error; }
-    finally { writing.current = false; if (mounted.current) setBusy(false); }
+    finally { pending.current--; if (mounted.current) setBusy(pending.current > 0); }
   };
   return { decisions, busy, error, refresh, mutate, enabled: !!projectId && !!reportId };
 }

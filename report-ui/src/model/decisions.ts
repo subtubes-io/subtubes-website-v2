@@ -74,7 +74,7 @@ export const agentDecisionInput = z.object({ ...draft, madeBy: decisionMadeBy, s
 export type AgentDecisionInput = z.infer<typeof agentDecisionInput>;
 
 export const decisionScope = { projectId: id, reportId: id };
-const target = { ...decisionScope, decisionId: id, expectedRevision: z.number().int().positive() };
+const target = { ...decisionScope, decisionId: id };
 export const recordDecisionArgs = z.object({ ...decisionScope, agent: label, ...agentDecisionInput.shape }).strict();
 export const supersedeDecisionArgs = z.object({ ...target, agent: label }).strict();
 export const decisionRequest = z.discriminatedUnion("action", [

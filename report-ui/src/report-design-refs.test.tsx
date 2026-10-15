@@ -35,11 +35,7 @@ test("summary renders semantic Markdown and navigates exact diagram and node IDs
   expect(screen.getByText("First step").closest("ol")).toBeTruthy();
   await userEvent.click(screen.getByRole("button", { name: "Current node" }));
   expect(onOpenDesign).toHaveBeenLastCalledWith({ designId: "diagram-1", nodeId: "node_1" });
-  const refs = within(screen.getByRole("region", { name: "Related designs" }));
-  await userEvent.click(refs.getByRole("button", { name: /Live service/ }));
-  expect(onOpenDesign).toHaveBeenLastCalledWith(report.designRefs[0]);
-  await userEvent.click(refs.getByRole("button", { name: "diagram-2" }));
-  expect(onOpenDesign).toHaveBeenLastCalledWith(report.designRefs[1]);
+  expect(screen.queryByRole("region", { name: "Related designs" })).toBeNull();
 });
 
 test("Markdown escapes HTML and rejects active protocols without fetching images", () => {

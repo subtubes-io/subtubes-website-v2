@@ -18,7 +18,6 @@ export * from "./ReportMarkdown";
 export * from "./ReportSwimlanes";
 export * from "./DesignRefs";
 export * from "./Decisions";
-export * from "./JudgementCalls";
 export * from "./QaPage";
 export * from "./WalkthroughCarousel";
 export * from "./AttachmentImage";

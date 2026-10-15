@@ -4,7 +4,6 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, expect, test, vi } from "vitest";
 import { DiffView } from "./DiffView";
 import { DecisionCard, DecisionComposer, NodeDecisions, type DecisionControls } from "./Decisions";
-import { JudgementCalls } from "./JudgementCalls";
 import { SummaryPage } from "./SummaryPage";
 import { ReportSwimlanes } from "./ReportSwimlanes";
 import { ReportTabs } from "./ReportTabs";
@@ -61,32 +60,17 @@ test("lines with decisions show their card inline, superseded ones are hidden, a
   expect(screen.queryAllByRole("button", { name: /on (Before|After) line/ })).toHaveLength(0);
 });
 
-test("cards separate human decisions from agent assumptions and offer the right reviewer actions", async () => {
-  const user = userEvent.setup(), c = controls();
-  const human = made(), assumption = guess();
-  const { rerender } = render(<DecisionCard item={human} controls={c} />);
-  expect(screen.getByText("Human decision")).toBeTruthy();
-  expect(screen.getByText("Needs confirmation")).toBeTruthy();
+test("a card shows the decision and why without badges, source notes or reviewer actions beyond Delete", () => {
+  const c = controls();
+  render(<DecisionCard item={made()} controls={c} />);
   expect(screen.getByText(/“keep the old default”/)).toBeTruthy();
   expect(screen.getByText("Callers migrate")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Adopt as my decision" })).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Confirm" }));
-  expect(c.onConfirm).toHaveBeenCalledWith(human, true);
-  rerender(<DecisionCard item={assumption} controls={c} />);
-  expect(screen.getByText("Agent assumption")).toBeTruthy();
-  expect(screen.queryByText(/“/)).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Adopt as my decision" }));
-  expect(c.onEdit).toHaveBeenCalledWith(assumption, { madeBy: "human" });
-  await user.click(screen.getByRole("button", { name: "Confirm assumption" }));
-  expect(c.onConfirm).toHaveBeenLastCalledWith(assumption, true);
-  await user.click(screen.getByRole("button", { name: "Mark superseded" }));
-  expect(c.onStatus).toHaveBeenCalledWith(assumption, "superseded");
-  rerender(<DecisionCard item={made({ confirmed: true })} controls={c} />);
-  expect(screen.getByText("Confirmed")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  for (const text of ["Human decision", "Agent assumption", "Needs confirmation", /Recorded by/]) expect(screen.queryByText(text)).toBeNull();
+  for (const name of ["Confirm", "Confirm assumption", "Adopt as my decision", "Edit", "Mark superseded"]) expect(screen.queryByRole("button", { name })).toBeNull();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
 });
 
-test("deleting a decision asks first, and edits send only reviewer-editable fields", async () => {
+test("deleting a decision asks first, and double-clicking edits its text in place", async () => {
   const user = userEvent.setup(), c = controls();
   const ask = vi.spyOn(reportServices, "ask").mockResolvedValueOnce(false).mockResolvedValueOnce(true);
   const item = made();
@@ -96,14 +80,48 @@ test("deleting a decision asks first, and edits send only reviewer-editable fiel
   expect(c.onRemove).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Delete" }));
   await waitFor(() => expect(c.onRemove).toHaveBeenCalledWith(item));
-  await user.click(screen.getByRole("button", { name: "Edit" }));
-  const form = screen.getByRole("form", { name: "Edit decision" });
-  expect(within(form).getByLabelText<HTMLTextAreaElement>("Alternatives").value).toBe("Switch to the new default — Breaks callers");
-  await user.clear(within(form).getByLabelText("Why")); await user.type(within(form).getByLabelText("Why"), "Keep the old default.");
-  await user.click(within(form).getByRole("button", { name: "Save changes" }));
-  // A hand-written title and kind are kept; only the text and alternatives change.
-  await waitFor(() => expect(c.onEdit).toHaveBeenCalledWith(item, expect.objectContaining({ title: item.title, kind: "tradeoff", decision: "Keep the old default." })));
-  expect(vi.mocked(c.onEdit).mock.calls[0][1]).not.toHaveProperty("anchors");
+  await user.dblClick(screen.getByText("Other teams depend on it."));
+  const why = screen.getByRole("textbox", { name: "Why (Markdown)" });
+  await user.clear(why); await user.type(why, "Callers still rely on it.");
+  await user.tab();
+  // A hand-written title is kept; only the edited field is sent.
+  await waitFor(() => expect(c.onEdit).toHaveBeenCalledWith(item, { rationale: "Callers still rely on it." }));
+});
+
+test("alternatives and revisit-when are edited in place, one alternative per line, and can be added or cleared", async () => {
+  const user = userEvent.setup(), c = controls();
+  const item = made();
+  const { rerender } = render(<DecisionCard item={item} controls={c} />);
+  await user.dblClick(screen.getByText(/Breaks callers/));
+  const alternatives = screen.getByRole("textbox", { name: "Alternatives (Markdown)" });
+  expect(alternatives).toHaveProperty("value", "Switch to the new default — Breaks callers");
+  await user.clear(alternatives); await user.type(alternatives, "Keep it — too slow{Enter}Delay the release");
+  await user.tab();
+  await waitFor(() => expect(c.onEdit).toHaveBeenCalledWith(item, { alternatives: [{ option: "Keep it", whyNot: "too slow" }, { option: "Delay the release", whyNot: "" }] }));
+  await user.dblClick(screen.getByText("Callers migrate"));
+  const revisit = screen.getByRole("textbox", { name: "Revisit when (Markdown)" });
+  await user.clear(revisit); await user.type(revisit, "Traffic doubles");
+  await user.tab();
+  await waitFor(() => expect(c.onEdit).toHaveBeenCalledWith(item, { revisitWhen: "Traffic doubles" }));
+  // Cleared values show a prompt to add them again; a read-only card shows neither.
+  const bare = made({ alternatives: [], revisitWhen: undefined });
+  rerender(<DecisionCard item={bare} controls={c} />);
+  expect(screen.getByText(/None recorded\. Double-click to add\./)).toBeTruthy();
+  expect(screen.getByText(/Not set\. Double-click to add\./)).toBeTruthy();
+  rerender(<DecisionCard item={bare} controls={{ ...c, enabled: false }} />);
+  expect(screen.queryByText("Alternatives")).toBeNull();
+  expect(screen.queryByText("Revisit when")).toBeNull();
+});
+
+test("editing a plain decision's text re-derives its title", async () => {
+  const user = userEvent.setup(), c = controls();
+  const plain = made({ title: "Keep it", decision: "Keep it", rationale: "", alternatives: [], kind: "direction" });
+  render(<DecisionCard item={plain} controls={c} />);
+  await user.dblClick(screen.getByText("Keep it", { selector: "p" }));
+  const field = screen.getByRole("textbox", { name: "Decision (Markdown)" });
+  await user.clear(field); await user.type(field, "Ship it");
+  await user.tab();
+  await waitFor(() => expect(c.onEdit).toHaveBeenCalledWith(plain, { decision: "Ship it", title: "Ship it" }));
 });
 
 test("a failed save keeps the draft and shows the error", async () => {
@@ -116,49 +134,6 @@ test("a failed save keeps the draft and shows the error", async () => {
   expect(onCancel).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Record decision" }));
   await waitFor(() => expect(onCancel).toHaveBeenCalledTimes(1));
-});
-
-test("the judgement calls put assumptions to confirm first and group the rest by file, with no filters, refresh or copy buttons", () => {
-  const items = [made({ confirmed: true }), guess(), made({ id: "d4", title: "Report-wide call", kind: "scope", recordedBy: "user", agent: undefined, source: { kind: "review" }, anchors: [], confirmed: true }), made({ id: "d5", title: "Retired", status: "superseded", confirmed: true })];
-  render(<JudgementCalls controls={controls(items)} />);
-  expect(screen.getByText(/2 human decisions · 1 agent assumption · 1 to confirm/)).toBeTruthy();
-  const pending = screen.getByRole("region", { name: "Needs confirmation" });
-  expect(within(pending).getByRole("article", { name: "Decision: Assumed UTC" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "Report-wide" })).toBeTruthy();
-  expect(screen.getByRole("region", { name: "src/a.ts" })).toBeTruthy();
-  expect(screen.queryByRole("article", { name: "Decision: Retired" })).toBeNull();
-  expect(screen.queryByRole("combobox")).toBeNull();
-  expect(screen.queryByRole("button", { name: /Refresh decisions|Copy agent instruction/ })).toBeNull();
-  expect(screen.getByRole("button", { name: "Record a decision" })).toBeTruthy();
-});
-
-test("the judgement calls explain empty and unsaved states and record a report-wide decision in a dialog", async () => {
-  const user = userEvent.setup(), c = controls();
-  const { rerender } = render(<JudgementCalls controls={{ ...c, enabled: false }} />);
-  expect(screen.getByRole("status").textContent).toContain("Save this report to a project");
-  expect(screen.getByText(/No judgement calls are recorded/)).toBeTruthy();
-  rerender(<JudgementCalls controls={c} />);
-  await user.click(screen.getByRole("button", { name: "Record a decision" }));
-  const form = within(screen.getByRole("dialog", { name: "Record a decision" })).getByRole("form", { name: "Record a decision" });
-  await user.type(within(form).getByLabelText("Why"), "Ship without SSO.");
-  await user.click(within(form).getByRole("button", { name: "Record decision" }));
-  await waitFor(() => expect(c.onCreate).toHaveBeenCalledWith(expect.objectContaining({ title: "Ship without SSO.", anchors: [] })));
-});
-
-test("the Summary holds the judgement calls: they are listed and recorded in a dialog, with no separate page", async () => {
-  const user = userEvent.setup(), c = controls();
-  const report = reportFixture();
-  const { rerender } = render(<SummaryPage config={{ report, onFile: vi.fn(), onView: vi.fn(), judgement: c }} />);
-  const section = screen.getByRole("region", { name: "Judgement behind this change" });
-  expect(within(section).getByText(/No judgement calls are recorded yet/)).toBeTruthy();
-  await user.click(within(section).getByRole("button", { name: "Record a decision" }));
-  const dialog = screen.getByRole("dialog", { name: "Record a decision" });
-  await user.type(within(dialog).getByLabelText("Why"), "Ship without SSO.");
-  await user.click(within(dialog).getByRole("button", { name: "Record decision" }));
-  await waitFor(() => expect(c.onCreate).toHaveBeenCalledWith(expect.objectContaining({ title: "Ship without SSO." })));
-  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Record a decision" })).toBeNull());
-  rerender(<SummaryPage config={{ report, onFile: vi.fn(), onView: vi.fn(), judgement: controls([made(), made({ id: "d9", kind: "override" }), guess(), guess({ id: "d8", status: "superseded" })]) }} />);
-  expect(within(screen.getByRole("region", { name: "Judgement behind this change" })).getAllByRole("article")).toHaveLength(3);
 });
 
 test("report diagram steps show a decision marker and list their decisions in the drawer", async () => {
@@ -191,21 +166,38 @@ test("useDecisions mutates through the native bridge and refreshes agent records
   call.mockImplementation(async () => result([first]));
   const { result: hook, unmount } = renderHook(() => useDecisions({ projectId: "p", reportId: "r" }, [], vi.fn()));
   await waitFor(() => expect(call).toHaveBeenCalledWith({ action: "list", projectId: "p", reportId: "r" }));
-  await act(async () => { await hook.current.mutate({ action: "confirm", decisionId: "d1", expectedRevision: 1, confirmed: true }); });
-  expect(call).toHaveBeenCalledWith({ action: "confirm", decisionId: "d1", expectedRevision: 1, confirmed: true, projectId: "p", reportId: "r" });
+  await act(async () => { await hook.current.mutate({ action: "confirm", decisionId: "d1", confirmed: true }); });
+  expect(call).toHaveBeenCalledWith({ action: "confirm", decisionId: "d1", confirmed: true, projectId: "p", reportId: "r" });
   call.mockImplementation(async () => result(agentAdded));
   await act(async () => { await hook.current.refresh(); });
   expect(hook.current.decisions).toHaveLength(2);
   call.mockRejectedValue(new Error("stale"));
-  await act(async () => { await expect(hook.current.mutate({ action: "remove", decisionId: "d1", expectedRevision: 1 })).rejects.toThrow("stale"); });
+  await act(async () => { await expect(hook.current.mutate({ action: "remove", decisionId: "d1" })).rejects.toThrow("stale"); });
   expect(hook.current.error).toContain("Could not update decisions");
+  unmount();
+});
+
+test("useDecisions lets edits overlap instead of refusing one that arrives while another is saving", async () => {
+  vi.spyOn(reportServices, "logAppEvent").mockResolvedValue();
+  const release: (() => void)[] = [];
+  const call = vi.spyOn(reportServices, "decisions").mockImplementation(async (request) => request.action === "edit"
+    ? new Promise<DecisionResult>((resolve) => release.push(() => resolve(result([made()])))) : result([made()]));
+  const { result: hook, unmount } = renderHook(() => useDecisions({ projectId: "p", reportId: "r" }, [], vi.fn()));
+  await waitFor(() => expect(call).toHaveBeenCalledWith({ action: "list", projectId: "p", reportId: "r" }));
+  let first!: Promise<unknown>, second!: Promise<unknown>;
+  act(() => { first = hook.current.mutate({ action: "edit", decisionId: "d1", decision: "One" }); second = hook.current.mutate({ action: "edit", decisionId: "d1", decision: "Two" }); });
+  await waitFor(() => expect(release).toHaveLength(2));
+  expect(hook.current.busy).toBe(true);
+  await act(async () => { release.forEach((done) => done()); await Promise.all([first, second]); });
+  expect(hook.current.busy).toBe(false);
+  expect(hook.current.error).toBe("");
   unmount();
 });
 
 test("useDecisions requires a saved report", async () => {
   const { result: hook } = renderHook(() => useDecisions(undefined, [], vi.fn()));
   expect(hook.current.enabled).toBe(false);
-  await act(async () => { await expect(hook.current.mutate({ action: "remove", decisionId: "d", expectedRevision: 1 })).rejects.toThrow("Save the report"); });
+  await act(async () => { await expect(hook.current.mutate({ action: "remove", decisionId: "d" })).rejects.toThrow("Save the report"); });
 });
 
 test("reports keep valid decisions and reject corrupted or unquoted ones", () => {
