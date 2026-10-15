@@ -140,6 +140,15 @@ interface DesignTable {
   id: string;
   organizationId: string;
   ownerId: string;
+  name: string;
+  kind: string;
+  schemaVersion: number;
+  revision: number;
+  content: string;
+  refs: string;
+  contentHash: string;
+  deviceLabel: string | null;
+  /** Left by the retired version history; no longer read or written. */
   preferredVersionId: string | null;
   headGeneration: Generated<number>;
   versionCount: Generated<number>;

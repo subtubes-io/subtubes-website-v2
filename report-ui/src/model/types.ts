@@ -2,7 +2,6 @@
 import type { Decision } from "./decisions";
 import type { QaStep, QaWalkthrough } from "./qa";
 import type { ReviewerEdits } from "./report-text";
-import type { CommitBinding } from "./snapshots";
 import type { ReportSwimlane } from "./report-swimlanes";
 
 export interface Hunk {
@@ -336,8 +335,6 @@ export interface SnapshotMeta {
   title?: string;
   repoRoot?: string;
   stats?: Report["stats"];
-  /** How many snapshots the report has and the newest one. */
-  snapshots?: { count: number; latest?: { number: number; takenAt: string; commit?: CommitBinding } };
   /** Derived by the app's list command from the saved report. */
   info?: { preview: string; flags: { high: number; medium: number; low: number }; source?: string; shots: number; visualScenarios?: number; mapNodes: number; flows: number; base?: string; head?: string };
 }

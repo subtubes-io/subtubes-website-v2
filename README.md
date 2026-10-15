@@ -320,70 +320,67 @@ those fixtures afterward, and writes JSON results with PNG attachments to
 
 The backend compatibility extension and website report guards are implemented
 but **not deployed**. It adds explicit report/design schema capabilities,
-negotiated reader headers, metadata-first discovery/history with per-item
-compatibility states, and transactional guards against replacing an incompatible
-head. Legacy readers use fixed schema defaults and receive explicit upgrade
+negotiated reader headers, metadata-first discovery with per-item
+compatibility states, and transactional guards against replacing an unreadable
+copy. Legacy readers use fixed schema defaults and receive explicit upgrade
 errors for incompatible records rather than filtered or downgraded documents.
 Corrupt content is reported as invalid instead of empty.
 
 Design wire schema 1 and report wire schema 2 remain the only accepted formats.
-No migration or new format is introduced. Original immutable content/hashes and
-design retry identities are preserved. The website disables unsupported/invalid
-report and snapshot content; local desktop SQLite, native/MCP, offline and
+No migration or new format is introduced. Original content/hashes are
+preserved. The website disables unsupported/invalid
+report content; local desktop SQLite, native/MCP, offline and
 per-record upgrade controls must be implemented in the desktop repository.
 See the [compatibility contract](docs/desktop-api-integration.md#55-json-document-compatibility-implemented-not-deployed)
 for the capability/reader protocol and rollout order.
 
-### Diagram versions and preferred cloud copy
+### Diagrams and reports: one current cloud copy
 
-Diagram sync does not merge documents. Each accepted push saves an immutable
-version under one design ID. A server-controlled preferred-version pointer selects
-the working copy. Pushes based on the current head become preferred automatically;
-stale pushes are saved as candidates without replacing the leader. Owners may
-elect any retained version using an atomic head-generation check.
+The cloud keeps **one current copy** of each report and each diagram. Pushing
+(`PUT`) replaces it; the last write wins, with no versions, snapshots, preferred
+pointer, `If-Match` precondition or conflict dialog. Only the owner may replace a
+copy, and a copy this reader cannot read (newer schema) or one that is damaged is
+never replaced. Anyone in the organization can **clone** a report or diagram to
+get an independent copy named "Copy of ..." that they own, at revision 1
+(`POST .../designs/:designId/clone`, `POST .../reports/:reportId/clone`).
+The organization report page has a **Clone report** button and each row of the
+reports list has **Clone**; the website has no designs UI.
 
-The API supports cloud discovery, preferred/historical downloads, paginated
-history, and retry-safe uploads. See the [desktop version contract](docs/desktop-api-integration.md#54-diagram-versions-and-preferred-working-copy)
-for request/response shapes and winner-selection behavior. Desktop controls and
-local sync checkpoints are **not implemented by this website**.
+See the [desktop contract](docs/desktop-api-integration.md#54-diagrams-and-reports-one-current-copy)
+for request/response shapes and error codes. Desktop controls and local sync
+checkpoints are **not implemented by this website**.
 
-**Breaking change:** the old `PUT /designs/:designId` upload is removed. Clients
-must use `POST /designs/:designId/versions` and `PUT /designs/:designId/preferred`.
-The versioning migration and backend are deployed on <https://subtubes.com>.
-Desktop clients still need to implement this contract and their local
-interface/checkpoint store. Production push, competing-version retention,
-election, pull, history, and retry behavior were verified with temporary data.
+**Breaking change:** the version, preferred-version, report snapshot and report
+status routes are removed and answer 404 (`POST/GET /designs/:id/versions`,
+`GET /designs/:id/versions/:versionId`, `PUT /designs/:id/preferred`,
+`PUT/GET /reports/:id/snapshots/{number}`, `GET /reports/:id/snapshots`,
+`GET /reports/:id/status`, and the website snapshot route). The desktop calls
+`PUT /designs/:designId`, which older website builds lack, so **deploy the
+desktop and website together**. `/limits` no longer advertises
+`designSnapshotMetadata`, `maxSnapshotDocumentBytes` or `maxSnapshotsPerReport`.
 
-An additive, capability-gated design snapshot metadata extension is deployed
-on <https://subtubes.com>. It preserves optional capture identity,
-notes, reason, UTC capture time and source revision with each immutable version.
-Existing envelopes and document hashes remain unchanged. Apply
-`20261014000000_design_snapshot_metadata` before deploying the matching server
-in another environment. Desktop clients should negotiate `designSnapshotMetadata: true`
-from `/limits` and send the optional envelope field. See the
-[metadata contract](docs/desktop-api-integration.md#optional-portable-snapshot-metadata-capability-gated-extension).
-Metadata-free versions omit the field; capture provenance is never fabricated.
-
-When applying the versioning change to another environment:
+When applying this change to another environment:
 
 1. Back up the database and test the migration on a development copy.
-2. Pause diagram writes and coordinate the desktop API cutover. The migration
-   moves existing design content into a first immutable version and removes the
-   old mutable document columns; old code cannot write after that migration.
-3. Apply `npm run db:migrate` separately using the migration connection, then
-   deploy the new server and upgraded desktop clients. Migration backfill runs
-   transactionally; assess its lock duration for the actual database size.
-4. Verify existing documents, owners, preferred pointers, hashes, and blob refs
-   survived. Previously overwritten content cannot be reconstructed.
+2. Apply `npm run db:migrate` separately using the migration connection, then
+   deploy the new server and the matching desktop. Migration
+   `20261015000000_single_copy_designs` adds `name`, `kind`, `schemaVersion`,
+   `revision`, `content`, `refs`, `contentHash` and `deviceLabel` to `design` and
+   backfills each design from its preferred version (else its newest version). A
+   design row with no version has no content and is deleted. Assess its lock
+   duration for the actual database size.
+3. Verify existing designs, owners, hashes, and blob refs survived.
 
-All accepted versions are retained without pruning. Account/organization deletion
-still cascades their data. The versioning migration deliberately refuses a
-destructive `down`; use a verified backup restoration or a forward migration for
-rollback, preserving any versions created after the cutover.
+The old `designVersion` and `reportSnapshot` tables and the
+`preferredVersionId`, `headGeneration` and `versionCount` columns are left in
+place and are no longer read or written (dormant); account/organization
+deletion still cascades their data. Existing version and snapshot history is
+therefore not shown anywhere. The migration deliberately refuses a destructive
+`down`; use a verified backup restoration or a forward migration to roll back.
 
-Run `npx tsx --test tests/design-versions.test.ts` for the real-PostgreSQL suite.
+Run `npx tsx --test tests/design-copies.test.ts` for the real-PostgreSQL suite.
 It requires the local Docker database, creates a unique isolated schema, exercises
-migration/API/concurrent push/election behavior, and removes only that schema.
+migration/API/replacement/ownership/clone behavior, and removes only that schema.
 It refuses remote database hosts.
 
 Database types live in `lib/db/types.ts`; query the database through the Kysely instance exported from `lib/db/client.ts`. Better Auth uses the same Postgres connection pool.

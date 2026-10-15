@@ -5,7 +5,6 @@ import { ReportViewer } from "@/components/report/report-viewer";
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
 import { readWebsiteReport } from "@/lib/report-reader";
-import type { WebsiteSnapshotMeta } from "@/components/report/report-viewer";
 import Link from "next/link";
 
 async function ReportDetails({
@@ -54,34 +53,12 @@ async function ReportDetails({
     );
   }
 
-  const snapshotRows = await db
-    .selectFrom("reportSnapshot")
-    .selectAll()
-    .where("organizationId", "=", organization.id)
-    .where("reportId", "=", reportId)
-    .orderBy("number", "asc")
-    .execute();
-
-  const snapshotMetas: WebsiteSnapshotMeta[] = snapshotRows.map((s) => {
-    const decoded = readWebsiteReport(s);
-    return {
-      id: s.id,
-      reportId: s.reportId,
-      number: s.number,
-      takenAt: s.takenAt.toISOString(),
-      note: s.note ?? undefined,
-      commit: decoded.commit,
-      compatibility: decoded.compatibility,
-    };
-  });
-
   return (
     <ReportViewer
       report={decoded.report}
       reportId={reportRow.id}
       projectName={reportRow.projectName}
       slug={organization.slug}
-      snapshots={snapshotMetas}
     />
   );
 }

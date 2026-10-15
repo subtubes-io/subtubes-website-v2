@@ -61,4 +61,4 @@ The components read the app's `Report` shape. A report pushed to the cloud is th
 
 ## In this repository
 
-The desktop app renders every report, live or a frozen snapshot, with `ReportPage` (see `app/src/ReportHost.tsx`) and imports the package through an alias (`app/vite.config.ts`, `app/tsconfig.json`) and connects the services in `app/src/report-services.ts`. The library's tests run with the app's: `cd app && npx vitest run`. The app's own chrome (header, lists, snapshots, push, account) stays in `app/`.
+The desktop app renders every report with `ReportPage` (see `app/src/ReportHost.tsx`) and imports the package through an alias (`app/vite.config.ts`, `app/tsconfig.json`) and connects the services in `app/src/report-services.ts`. The library's tests run with the app's: `cd app && npx vitest run`. The app's own chrome (header, lists, clone, push, account) stays in `app/`.

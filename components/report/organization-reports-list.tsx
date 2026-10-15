@@ -17,6 +17,8 @@ import {
   type SnapshotMeta,
 } from "@subtubes/report-ui";
 
+import { cloneReportRequest } from "./clone-report";
+
 export interface OrganizationReportSummary extends SnapshotMeta {
   projectName?: string;
   compatibility?: Compatibility;
@@ -32,6 +34,22 @@ export function OrganizationReportsList({
   const router = useRouter();
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"new" | "old" | "name">("new");
+  const [cloningId, setCloningId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const clone = async (id: string) => {
+    if (cloningId) return;
+    setCloningId(id);
+    setError(null);
+    try {
+      await cloneReportRequest(slug, id);
+      router.refresh();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      setCloningId(null);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -79,14 +97,14 @@ export function OrganizationReportsList({
         </select>
       </ListSearch>
 
+      {error && <p className="report-notice-error" role="alert">{error}</p>}
       <ListTable
         label="Reports"
-        columns="minmax(0,1fr) 190px 190px 90px 90px"
-        headings={["Name", "Changes", "Snapshots", "Updated", ""]}
+        columns="minmax(0,1fr) 190px 90px 190px"
+        headings={["Name", "Changes", "Updated", ""]}
       >
         {filtered.map((item) => {
           const flags = item.info?.flags;
-          const latest = item.snapshots?.latest;
           const open = () => openReport(item.id);
           const blocked = item.compatibility && item.compatibility.status !== "supported";
           const status = item.compatibility?.status === "unsupported" ? "Requires a newer app" : "Invalid document";
@@ -117,29 +135,22 @@ export function OrganizationReportsList({
                   <span className="loc">no flags</span>
                 ) : null}
               </ListCell>
-              <ListCell className="list-snapshots">
-                {item.snapshots?.count ? (
-                  <>
-                    <span>
-                      {item.snapshots.count}{" "}
-                      {item.snapshots.count === 1 ? "snapshot" : "snapshots"}
-                    </span>
-                    <span className="loc" title={latest?.commit?.subject}>
-                      {latest?.commit
-                        ? `#${latest.number} · ${latest.commit.shortSha}`
-                        : `#${latest?.number} · not bound to a commit`}
-                    </span>
-                  </>
-                ) : (
-                  <span className="loc">None yet</span>
-                )}
-              </ListCell>
               <ListCell className="loc">
                 <span title={new Date(item.savedAt).toLocaleString()}>
                   {ago(item.savedAt)}
                 </span>
               </ListCell>
               <ListCell className="list-row-actions">
+                {!blocked && <button
+                  type="button"
+                  data-a="clone"
+                  className="button-secondary"
+                  disabled={cloningId !== null}
+                  title="Make an independent copy of this report"
+                  onClick={(e) => { e.stopPropagation(); void clone(item.id); }}
+                >
+                  {cloningId === item.id ? "Cloning…" : "Clone"}
+                </button>}
                 {!blocked && <Link
                   href={`/dashboard/organizations/${slug}/reports/${encodeURIComponent(item.id)}`}
                   className="button-secondary"

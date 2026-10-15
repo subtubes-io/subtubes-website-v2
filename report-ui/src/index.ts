@@ -4,7 +4,6 @@
 
 export * from "./ReportPage";
 export * from "./ListView";
-export * from "./SnapshotBanner";
 export * from "./Review";
 export * from "./SummaryPage";
 export * from "./ChangesPage";
@@ -53,7 +52,6 @@ export type * from "./model/decisions";
 export type * from "./model/qa";
 export type { DesignNodeStatus, DesignContent, DesignNode, DesignGroup, DesignLink, SavedDesign, DesignSummary, DesignRequest } from "./model/designs";
 export type * from "./model/design-legend";
-export type * from "./model/snapshots";
 export type * from "./model/report-swimlanes";
 export type * from "./model/report-text";
 export type * from "./model/report-designs";

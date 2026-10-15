@@ -28,16 +28,34 @@ test("report detail endpoint rejects unauthenticated requests", async () => {
   assert.equal(res.status, 401);
 });
 
-test("snapshot endpoint rejects unauthenticated requests", async () => {
-  const { GET: getSnapshot } = await import(
-    "@/app/api/v1/organizations/[orgId]/reports/[reportId]/snapshots/[number]/route"
+test("clone endpoints reject unauthenticated requests", async () => {
+  const { POST: cloneReport } = await import(
+    "@/app/api/v1/organizations/[orgId]/reports/[reportId]/clone/route"
   );
-  const req = new Request("http://localhost:3000/api/v1/organizations/org-123/reports/rep-1/snapshots/1");
-  const res = await getSnapshot(req, {
-    params: Promise.resolve({ orgId: "org-123", reportId: "rep-1", number: "1" }),
-  });
-  assert.ok(res);
-  assert.equal(res.status, 401);
+  const reportResponse = await cloneReport(
+    new Request("http://localhost:3000/api/v1/organizations/org-123/reports/rep-1/clone", { method: "POST" }),
+    { params: Promise.resolve({ orgId: "org-123", reportId: "rep-1" }) },
+  );
+  assert.ok(reportResponse);
+  assert.equal(reportResponse.status, 401);
+  const { POST: cloneDesign } = await import(
+    "@/app/api/v1/organizations/[orgId]/designs/[designId]/clone/route"
+  );
+  const designResponse = await cloneDesign(
+    new Request("http://localhost:3000/api/v1/organizations/org-123/designs/des-1/clone", { method: "POST" }),
+    { params: Promise.resolve({ orgId: "org-123", designId: "des-1" }) },
+  );
+  assert.ok(designResponse);
+  assert.equal(designResponse.status, 401);
+});
+
+test("the retired snapshot, version and status routes no longer exist", async () => {
+  for (const route of [
+    "@/app/api/v1/organizations/[orgId]/reports/[reportId]/snapshots/[number]/route",
+    "@/app/api/v1/organizations/[orgId]/reports/[reportId]/status/route",
+    "@/app/api/v1/organizations/[orgId]/designs/[designId]/versions/route",
+    "@/app/api/v1/organizations/[orgId]/designs/[designId]/preferred/route",
+  ]) await assert.rejects(import(route), `${route} should be gone`);
 });
 
 test("blob endpoint rejects unauthenticated requests", async () => {

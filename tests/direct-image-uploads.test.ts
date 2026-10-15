@@ -9,6 +9,7 @@ import { up as initial } from "../migrations/20261012000000_initial_schema";
 import { up as profileLinks } from "../migrations/20261012000100_profile_links";
 import { up as reports } from "../migrations/20261012000200_cloud_reports";
 import { up as versions } from "../migrations/20261013000000_design_versions";
+import { up as singleCopy } from "../migrations/20261015000000_single_copy_designs";
 import { up as directImages, down as rollbackImages } from "../migrations/20261014000100_direct_image_uploads";
 import { DocumentError } from "../lib/cloud-push/document-compatibility";
 import type { generateClientTokenFromReadWriteToken } from "@vercel/blob/client";
@@ -31,6 +32,7 @@ test("direct image intents, verification, authorization, retries and migration p
     await profileLinks(database);
     await reports(database);
     await versions(database);
+    await singleCopy(database);
     const owner = randomUUID(), other = randomUUID(), org = randomUUID(), otherOrg = randomUUID();
     for (const id of [owner, other]) await sql`INSERT INTO "user" (id,name,email) VALUES (${id},'Image tester',${id + "@example.test"})`.execute(database);
     for (const id of [org, otherOrg]) await sql`INSERT INTO organization (id,name,slug,"createdAt") VALUES (${id},'Image org',${id},now())`.execute(database);
@@ -86,7 +88,8 @@ test("direct image intents, verification, authorization, retries and migration p
     await assert.rejects(completeImageUpload(org, owner, expired.uploadId, provider), errorCode("upload_expired"));
     const destination = randomUUID();
     await db.insertInto("design").values({
-      id: destination, organizationId: org, ownerId: other,
+      id: destination, organizationId: org, ownerId: other, name: "Destination", kind: "system", schemaVersion: 1,
+      revision: 1, content: "{}", refs: '{"blobs":[]}', contentHash: "sha256:" + "0".repeat(64), deviceLabel: null,
     }).execute();
     await assert.rejects(issueImageUpload(org, owner, { ...input, resource: { kind: "design", id: destination } }, provider), errorCode("forbidden"));
 

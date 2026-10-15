@@ -1,15 +1,15 @@
 # Desktop login, report, and design API integration
 
-Status: implementation handoff, 2026-10-13.
-Deployed website source baseline: `f125456`.
-Optional design snapshot metadata: deployed and verified on production.
+Status: implementation handoff, updated 2026-10-15 for the single-copy model.
+The cloud keeps **one current copy** of each report and each diagram; there is
+no version or snapshot history.
 
 Audience: the Subtubes IRE desktop implementation in
 `/Users/edgarmartinez/Code/diff-enginer`.
 
 This document describes the authentication and cloud APIs available today,
-with deployment status called out for additive extensions. It does not claim
-that this website implements the desktop UI, local snapshot store, or checkpoints.
+with deployment status called out where it differs. It does not claim
+that this website implements the desktop UI, local clone commands, or checkpoints.
 
 ## 1. Scope and implementation boundary
 
@@ -24,10 +24,9 @@ The organization-scoped `/api/v1` cloud API is also deployed.
 | Current-session sign-out | Implemented |
 | `/api/v1/me` convenience response with membership roles | Implemented |
 | Personal default organization (auto-created on registration, strictly private) | Implemented |
-| Cloud Push Contract v1 (`/api/v1/organizations/{orgId}`) reports, snapshots, blobs, designs | Implemented |
-| Immutable diagram versions, cloud discovery/pull and preferred-version election | Deployed on https://subtubes.com; desktop integration still required |
-| Portable design snapshot notes and capture metadata | Deployed on https://subtubes.com; desktop capability negotiation and consumption still required |
-| Document compatibility metadata and race-safe incompatible-head protection | Implemented in this checkout; not deployed; desktop reader integration required |
+| Cloud Push Contract (`/api/v1/organizations/{orgId}`): reports, designs, blobs; one current copy each, last write wins | Implemented in this checkout (see section 5.7 for deployment) |
+| Cloning a report or design (API), and cloning a report from the website | Implemented in this checkout |
+| Document compatibility metadata and race-safe unreadable-copy protection | Implemented in this checkout; not deployed; desktop reader integration required |
 | Remote collaborative review operations | Proposed, not available |
 
 Keep local report generation and storage working without login. Login enables
@@ -368,9 +367,13 @@ Do not change MCP `publish_report` into an automatic network upload. It currentl
 saves locally. Remote sharing will be a separate explicit action.
 
 
-## 5. Cloud Push Contract (v1) — Implemented
+## 5. Cloud Push Contract — Implemented
 
-Desktop pushes reports, snapshots, blobs, and designs to `/api/v1/organizations/{orgId}`.
+Desktop pushes reports, designs and blobs to `/api/v1/organizations/{orgId}`.
+The cloud holds **one current copy** of each report and each design. A push
+**replaces** it: the last write wins. There are no versions, preferred pointer,
+snapshots, `If-Match` preconditions, upload IDs for documents, or conflict
+responses for concurrent writers. To keep an older state, clone (section 5.4).
 
 ### 5.1 Personal organization lifecycle
 - Every user automatically receives a default personal organization upon registration.
@@ -389,14 +392,21 @@ All requests require Bearer token authorization in the `Authorization` header an
 | PUT | `/api/v1/organizations/:orgId/blobs/:sha256` | Raw binary blob upload |
 | POST | `/api/v1/organizations/:orgId/blobs/uploads` | Authorize a direct private image upload |
 | POST | `/api/v1/organizations/:orgId/blobs/uploads/:uploadId/complete` | Verify storage bytes and register a ready image |
-| GET | `/api/v1/organizations/:orgId/designs` | Paginated preferred-diagram discovery |
-| GET | `/api/v1/organizations/:orgId/designs/:designId` | Pull the preferred complete definition |
-| GET | `/api/v1/organizations/:orgId/designs/:designId/versions` | Paginated immutable history |
-| GET | `/api/v1/organizations/:orgId/designs/:designId/versions/:versionId` | Pull an exact saved version |
-| POST | `/api/v1/organizations/:orgId/designs/:designId/versions` | Save a version; elect only if expected head is current |
-| PUT | `/api/v1/organizations/:orgId/designs/:designId/preferred` | Explicitly elect a saved version with a head-generation check |
-| PUT | `/api/v1/organizations/:orgId/reports/:reportId/snapshots/:number` | Write-once snapshot upload with hash idempotency |
-| PUT | `/api/v1/organizations/:orgId/reports/:reportId` | Report head publication with If-Match concurrency |
+| GET | `/api/v1/organizations/:orgId/blobs/:sha256` | Download organization-scoped image bytes |
+| GET | `/api/v1/organizations/:orgId/designs` | Paginated design discovery |
+| GET | `/api/v1/organizations/:orgId/designs/:designId` | Pull the current complete definition |
+| PUT | `/api/v1/organizations/:orgId/designs/:designId` | Create or replace the current copy (owner only) |
+| POST | `/api/v1/organizations/:orgId/designs/:designId/clone` | Independent copy owned by the caller |
+| GET | `/api/v1/organizations/:orgId/reports` | Report discovery |
+| GET | `/api/v1/organizations/:orgId/reports/:reportId` | Read the current report |
+| PUT | `/api/v1/organizations/:orgId/reports/:reportId` | Create or replace the current report (owner only; `If-Match`/`If-None-Match` ignored) |
+| POST | `/api/v1/organizations/:orgId/reports/:reportId/clone` | Independent copy owned by the caller |
+
+The following routes no longer exist and answer 404:
+`/designs/:id/versions`, `/designs/:id/versions/:versionId`,
+`/designs/:id/preferred`, `/reports/:id/snapshots`,
+`/reports/:id/snapshots/:number` and `/reports/:id/status`, as does the website
+route `/api/organizations/:slug/reports/:id/snapshots/:number`.
 
 Images use the [direct private image upload contract](./report-image-uploads.md).
 Desktop optimization occurs before local saving/hashing, with a 2 MiB final
@@ -404,60 +414,54 @@ limit. The API authorizes uploads, verifies storage bytes, and registers each
 ready image; report publication waits for all image references. The raw PUT route
 remains for older clients. A private report Blob store and migration are required
 before rollout; the public avatar store is not suitable.
-| GET | `/api/v1/organizations/:orgId/reports/:reportId/status` | Report revision and available snapshots |
 
 ### 5.3 Payload limits and validation
-- Maximum report/snapshot document size: 10 MiB
-- Maximum design document size: 2 MiB
+- Maximum report document size: 10 MiB (`maxReportDocumentBytes`)
+- Maximum design document size: 2 MiB (`maxDesignDocumentBytes`)
 - Maximum blob size: 2 MiB (2,097,152 bytes); 16,384 pixels per side
+- Maximum blob references: 500 per design (`maxBlobsPerDesign`) and per report (`maxBlobsPerReport`)
 - Supported report schema versions: `[2]`
 - The compatibility extension adds `supportedReportSchemaVersions: [2]`; the
   existing `supportedSchemaVersions: [2]` remains an alias for older clients.
 - Supported design schema versions: `[1]` (`supportedDesignSchemaVersions` in `/limits`)
-- Maximum design blob references: 500 (`maxBlobsPerDesign` in `/limits`)
+- `/limits` also returns `documentCompatibilityMetadata`, `documentReaderCapabilities`,
+  `maxImageSide`, `directImageUploads`, `imageUploadConcurrency` and `allowedBlobTypes`.
+  It no longer advertises `designSnapshotMetadata`, `maxSnapshotDocumentBytes` or
+  `maxSnapshotsPerReport`.
 - Inline media (`data:image/...`, `data:video/...`, `data:audio/...`) is strictly forbidden and rejected with `422 inline_media`. Blobs must be uploaded to `/blobs/:sha256` and referenced by hash.
 
-### 5.4 Diagram versions and preferred working copy
+### 5.4 Diagrams and reports: one current copy
 
-**No merging.** Every accepted push creates an immutable definition under the
-same design ID. One pointer selects the preferred cloud working copy. Old
-versions and attachments remain downloadable. Only organization members can
-read, and only the design owner can push versions or elect the leader.
-Another computer signed into the same account has those same owner permissions.
-Account/organization deletion still removes their data.
+**No merging and no history.** Each design and each report has a single current
+copy per organization. Only organization members can read; only the owner can
+replace it. Another computer signed into the same account has the same owner
+permissions. A different member who wants their own editable copy clones it.
+Account/organization deletion still removes the data.
 
-This contract **replaces** the old single-document `PUT /designs/:designId`
-(now unsupported / HTTP 405). It does not change report/snapshot uploads.
-Core backend routes and the versioning migration are deployed on
-<https://subtubes.com>. The desktop interface/checkpoint store still needs to
-implement this contract; deployment does not add those desktop controls.
-The optional capture-metadata extension below is also deployed; `/limits`
-advertises `designSnapshotMetadata: true` on production.
+This contract **replaces** the earlier immutable-version model. The old
+`POST /designs/:id/versions` and `PUT /designs/:id/preferred` routes are gone
+(404), and `PUT /designs/:designId` is the supported way to create or replace a
+design.
 
-#### Three different version concepts
+#### Identifiers
 
 - `document.revision`: the desktop's local document revision, preserved as
-  metadata; never use it as a cloud concurrency precondition.
-- Saved `version.id` / `version.number`: immutable server-issued identity and
-  ascending per-design sequence. Sequence is upload order, not preference.
-- `headGeneration`: server-controlled generation of the preferred pointer.
-  It increments whenever the leader changes, even if electing an old version.
-  An A -> B -> A election cannot satisfy a stale precondition.
+  metadata; never a cloud concurrency precondition.
+- `contentHash`: server-computed canonical hash of the normalized document (see
+  below). Used for receipts and change detection, not for preconditions.
 
-#### Push
+#### Push a design
 
 Upload missing blobs first, then submit:
 
 ```http
-POST /api/v1/organizations/:orgId/designs/:designId/versions
+PUT /api/v1/organizations/:orgId/designs/:designId
 Authorization: Bearer <session-token>
 Content-Type: application/json
 ```
 
 ```json
 {
-  "uploadId": "802dff3e-7fa6-4b5d-928c-bac4b4d46018",
-  "expectedHeadGeneration": 0,
   "deviceLabel": "Laptop",
   "document": {
     "name": "Architecture",
@@ -470,204 +474,126 @@ Content-Type: application/json
 }
 ```
 
-`uploadId` is a fresh UUID for each intentional push and must be retained across
-transport retries. `expectedHeadGeneration` is required: zero means no cloud
-diagram; thereafter send the generation observed during the last pull/read.
 `deviceLabel` is optional display metadata (1-100 trimmed characters), not
 trusted identity. Name is 1-200 trimmed characters, kind is `swimlane` or `system`,
 schema version is currently 1, local revision is a positive integer, and content
 is a JSON object. Envelopes reject unknown fields. Enumerate all images in
 `refs.blobs` (at most 500 SHA-256 hashes); hashes are normalized and deduplicated.
-The 2 MiB limit applies to the entire request including the envelope.
+The 2 MiB limit applies to the entire request including the envelope. The design
+ID is chosen by the client (1-200 characters).
 
-On a new saved version, HTTP 201:
+First push, HTTP 201:
 
 ```json
 {
   "success": true,
-  "replayed": false,
   "designId": "<design-id>",
-  "preferredVersionId": "<current-leader-version-id>",
-  "headGeneration": 4,
-  "versionCount": 6,
-  "savedVersion": {
-    "id": "<new-version-id>",
-    "number": 6,
-    "uploadId": "802dff3e-7fa6-4b5d-928c-bac4b4d46018",
-    "contentHash": "sha256:<server-computed-hash>",
-    "authorId": "<authenticated-owner-id>",
-    "deviceLabel": "Laptop",
-    "createdAt": "<ISO timestamp>",
-    "name": "Architecture",
-    "kind": "swimlane",
-    "schemaVersion": 1,
-    "revision": 3
-  },
-  "outcome": "saved_requires_selection"
+  "contentHash": "sha256:<server-computed-hash>",
+  "updatedAt": "<ISO timestamp>",
+  "created": true
 }
 ```
 
-- `saved_and_preferred`: expected generation matched; the saved version was
-  elected in the same transaction.
-- `saved_requires_selection`: expected generation was stale; the version is
-  durably saved but the leader did **not** move. Show a chooser, not generic
-  “synced” feedback. This is not an unsaved HTTP 409.
-- Exact retry: HTTP 200, `replayed: true`, same saved version, no extra version
-  or election. Head fields and outcome describe the **current** preference,
-  which may have changed since the original request.
-- Upload-ID reuse with changed document, device label, expected generation or
-  normalized snapshot metadata (including presence versus absence):
-  HTTP 409 `upload_id_conflict`; no data changed. A new intentional push needs
-  a new UUID. Equal content with distinct upload IDs is retained as separate
-  intentional versions.
+Replacing an existing copy returns HTTP 200 with the same shape and
+`created: false`.
+
+- Only the owner may replace a copy: `403 forbidden`; the message tells the
+  caller to clone it instead. A design that belongs to another organization is
+  `404 not_found`.
+- An existing copy this reader cannot read is never replaced: a newer schema
+  returns `426 upgrade_required`, a damaged copy `422 invalid_document`.
+- Missing blobs are `422 missing_blobs`; inline media is `422 inline_media`.
+- Pushes are last-write-wins. Two first pushes that race both succeed: one
+  creates the copy and the other replaces it.
+- Retrying an unchanged push is safe; it replaces the copy with identical content.
 
 The canonical content hash covers the normalized full `document`, including name,
 kind, schema version, local revision, content and refs. Object key order is
-canonicalized; array order is significant. It excludes upload/device/head fields.
-It also excludes the optional envelope `snapshot` field.
+canonicalized; array order is significant. It excludes `deviceLabel`.
 
-#### Optional portable snapshot metadata (capability-gated extension)
-
-The desktop may label immutable design versions "snapshots"; the API still uses
-`/versions`. This extension does not change report snapshots or document schema 1.
-Local snapshot operations do not publish or elect a cloud version automatically.
-
-Before including metadata, fetch the organization's `/limits`. Only
-`designSnapshotMetadata: true` enables this extension. If absent or false, send
-the existing envelope with no `snapshot` field. Do not probe by attempting an
-unsupported upload, or strip metadata from a pending retry: retain that exact
-envelope/upload ID until the capable server is available again.
-
-When supported, add this optional field alongside `document`, not inside it:
-
-```json
-{
-  "snapshot": {
-    "snapshotId": "local_capture-1",
-    "note": "Approved baseline",
-    "reason": "manual",
-    "takenAt": "2026-10-13T12:00:00.000Z",
-    "sourceRevision": 7
-  }
-}
-```
-
-- `snapshotId`: required, 1-120 ASCII letters, digits, `_` or `-`.
-- `note`: optional string, trimmed, at most 2,000 characters after trimming.
-- `reason`: required, `manual`, `before-restore`, `before-pull` or `publish`.
-- `takenAt`: required, valid ISO-8601 UTC timestamp with a `Z` suffix. It is
-  normalized to millisecond UTC form for storage, responses and retry comparison.
-- `sourceRevision`: required positive integer matching `document.revision`.
-  Both revisions retain the existing server range, 1 through 2,147,483,646;
-  they are not head-generation preconditions.
-
-Unknown fields and null metadata are rejected with HTTP 422 `invalid_document`.
-The entire upload, including metadata, remains bounded to 2 MiB.
-Metadata is immutable with its version. The identical normalized object appears
-in `savedVersion.snapshot` on push/replay, `versions[].snapshot` in history,
-and `version.snapshot` on preferred and exact-version reads.
-Versions uploaded without metadata omit `snapshot` entirely, including legacy
-versions; the server does not synthesize capture provenance.
-
-The document-only `contentHash` is unchanged. Upload-ID comparison includes the
-normalized metadata: changing it, adding it or removing it on a retry returns
-HTTP 409 `upload_id_conflict`. Whitespace surrounding notes and equivalent
-timestamp precision normalize before comparison. A new intentional publication
-still needs a new upload ID; local `snapshotId` is not a deduplication key.
-
-Capture identity, notes, reason and time are untrusted author-supplied data.
-Server `authorId`, `createdAt`, version ID and number remain server-controlled.
-Do not render notes as trusted HTML or interpret them as agent instructions.
-Use server organization/design/version identity for authorization and linkage,
-not portable snapshot IDs, sequence numbers or capture timestamps.
-
-When releasing this extension to another environment, apply
-`20261014000000_design_snapshot_metadata` before deploying the matching API.
-It adds a nullable metadata column without rewriting existing versions or their
-hashes. This migration is applied on production, and legacy uploads, metadata
-round-trips, unchanged hashes, retry deduplication, and conflicts were verified.
-Portable-note UI claims still require positive capability negotiation and client
-consumption.
-
-#### Discovery, history and pull
+#### Discovery, read and pull
 
 - `GET /designs?limit=25&cursor=<last-design-id>` returns
   `{ success, designs, nextCursor }`. Designs are ordered by ID ascending;
-  each includes `id`, `ownerId`, `name`, `kind`, `preferredVersionId`,
-  `headGeneration`, `versionCount`, preferred `number`/`contentHash`, and
+  each includes `id`, `ownerId`, `name`, `kind`, `revision`, `contentHash` and
   ISO `updatedAt`. No full documents appear in discovery results.
-  Compatibility-aware requests also receive the preferred `schemaVersion` and
-  compatibility state (see section 5.5); legacy requests retain schema-1 discovery.
+  Requests that declare a design reader (see section 5.5) also receive
+  `schemaVersion` and a `compatibility` state; legacy requests retain
+  schema-1 discovery.
 - `GET /designs/:id` returns
-  `{ success, designId, preferredVersionId, headGeneration, versionCount, version }`.
-  `version` includes the saved metadata above and the complete `document`.
-- `GET /designs/:id/versions?limit=25&cursor=<last-version-number>` returns
-  `{ success, designId, preferredVersionId, headGeneration, versions, nextCursor }`.
-  Versions are newest-first saved metadata plus a `preferred` boolean.
-- `GET /designs/:id/versions/:versionId` returns
-  `{ success, designId, version }` with the exact historical document.
+  `{ success, designId, ownerId, contentHash, updatedAt, document }`, where
+  `document` is `{ name, kind, schemaVersion, revision, content, refs: { blobs } }`.
+- `GET /reports` returns `{ success, reports }`; each summary has `id`, `name`,
+  `projectName`, `savedAt` and no `snapshots` field. Declared readers receive
+  metadata only, paginated by ID (see section 5.5). `GET /reports/:id` returns
+  the current report document and its revision, hash and timestamps.
 
 Limits are integers from 1 to 100. `nextCursor: null` means no more results.
 Use the returned cursor rather than offsets. Read responses are `Cache-Control:
-no-store`; the leader can change at any moment. Blob downloads use the existing
-organization-scoped authenticated `GET /blobs/:sha256`.
+no-store`. Blob downloads use the existing organization-scoped authenticated
+`GET /blobs/:sha256`.
 
-#### Explicit winner selection
+#### Push a report
 
-```http
-PUT /api/v1/organizations/:orgId/designs/:designId/preferred
-Authorization: Bearer <session-token>
-Content-Type: application/json
-```
+`PUT /reports/:reportId` creates the report or **replaces its one current copy**
+and returns `200 { success, reportId, revision }`. No `If-Match` is needed; any
+`If-Match` or `If-None-Match` header is ignored.
 
-```json
-{
-  "versionId": "<chosen-saved-version-id>",
-  "expectedHeadGeneration": 4
-}
-```
+- Only the owner may replace it: `403 forbidden`. A report in another
+  organization is `404 not_found`.
+- An existing copy this reader cannot read (newer schema, damaged) is never
+  replaced (`426 upgrade_required` / `422 invalid_document`).
+- Referenced blobs and designs must already exist in the organization:
+  `422 missing_blobs` / `422 missing_designs`. Push images and designs first and
+  the report last, so the cloud never holds a report pointing at something
+  missing.
+- The envelope is `{ schemaVersion: 2, contentHash, report, refs?, revision, project? }`;
+  the size limit is 10 MiB.
 
-HTTP 200 returns `{ success, designId, preferredVersionId, headGeneration,
-versionCount }`. Selecting the already-preferred version with a current
-generation is a no-op. The candidate must belong to this design and organization.
-The request is bounded to 4 KiB.
+#### Clone
 
-If another computer changes the leader during the decision, HTTP 409
-`head_conflict` includes current head fields in `error.details`. Fetch the
-current candidates and ask again; never force or retry a choice with a new
-generation without user review. No saved definition is edited or deleted.
+Cloning makes an independent copy owned by the caller; the source is never
+changed and the copy is not linked to it.
+
+- `POST /designs/:designId/clone` returns `201 { success, designId, name,
+  contentHash, updatedAt, created: true }`. `designId` is new, `name` is
+  "Copy of <name>" (at most 200 characters), the revision is 1, and image
+  references stay the same organization-scoped blobs.
+- `POST /reports/:reportId/clone` returns `201 { success, reportId, name,
+  revision: 1, contentHash, updatedAt }`, with `name` "Copy of <title>".
+- Any organization member may clone; the copy belongs to the caller. A source
+  from another organization is `404`; a source this reader cannot read is `426`
+  or `422`.
 
 #### Desktop UX and checkpoints (integration required)
 
-1. New computer: list designs, download the preferred definition and blobs.
-2. Store checkpoint by exact server/account/org/design:
-   preferred version ID, head generation, base document/hash and local edit
-   generation. Keep local revisions separate from cloud versions.
-3. Push a captured local document. On conflict, present:
-   **Use my pushed version**, **Keep current cloud version**, or
-   **Choose another saved version**. Cancel changes neither pointer nor local
-   working copy; the just-pushed candidate still exists in history.
-4. All choices are winner elections, not merges. “Keep both” happens implicitly
-   because neither saved version is deleted. No fork is needed to preserve both.
-5. Electing a cloud leader does **not** replace this computer's local document.
-   Pulling is a separate explicit action. Confirm overwriting unsynced local
-   work, save a recoverable local backup, and install the full document/blobs
-   atomically only if the captured local edit generation is still current.
-6. If local edits continue during a push, keep them unsynced; checkpoint only
-   the document actually saved. A successful cloud election does not imply
-   every computer now has that version.
-7. Lost upload response: retry the same upload ID and payload. Lost election
-   response: fetch the current head; do not blindly replay a stale choice.
-   Offline/auth/network errors must retain local work and show retry guidance.
+1. New computer: list designs, download the current definition and blobs.
+2. Store a checkpoint by exact server/account/org/design: the base
+   document/hash and local edit generation. Keep local revisions separate from
+   the cloud copy.
+3. Push a captured local document. It replaces the cloud copy; there is no
+   conflict dialog. Read the existing cloud copy first and stop if it has a newer
+   schema or is damaged. Skip the write when the document is unchanged since the
+   checkpoint and the cloud hash still matches it.
+4. Pull is a separate explicit action. Confirm overwriting local work only when
+   the local design has unsent changes, and tell the user they can clone first to
+   keep a copy. Install the full document/blobs atomically only if the captured
+   local edit generation is still current.
+5. If local edits continue during a push, keep them unsynced; checkpoint only
+   the document actually saved.
+6. Offline/auth/network errors must retain local work and show retry guidance.
 
 Error envelopes retain `{ error: { code, message, details? } }`.
 Unsupported positive schema versions use `unsupported_schema_version`, not
 `invalid_document`, once the compatibility extension is deployed.
-Missing/malformed preconditions are HTTP 422 `invalid_document` before saving.
-Missing blobs are 422 `missing_blobs`; inline images are 422 `inline_media`;
+Malformed requests are HTTP 422 `invalid_document`.
+Missing blobs are 422 `missing_blobs`; missing report designs are 422
+`missing_designs`; inline images are 422 `inline_media`;
 oversize is 413 `too_large`; wrong media type is 415 `invalid_document`;
 invalid pagination is 422 `invalid_page`. Authentication/membership/owner
-failures use 401/403, and inaccessible design/version lookups use 404.
+failures use 401/403 (`forbidden` for a non-owner replace), a copy this reader
+cannot read is 426 `upgrade_required`, a damaged one 422 `invalid_document`, and
+inaccessible design/report lookups use 404.
 Unexpected database failures are logged and return 500 `internal_error`.
 
 ### Proposed identity and storage model
@@ -735,7 +661,7 @@ code/data: show the destination and require explicit sharing.
 
 - Published content is immutable; subsequent content changes create revisions.
 - Review threads/status are separate revision-checked mutations.
-- Use expected revisions or `If-Match`; return conflict instead of overwriting.
+- Use expected revisions for review mutations; return conflict instead of overwriting.
 - Attribute imported historical review notes as provenance, not newly verified
   authenticated actions by another person.
 - Keep a local cache and explicit retry/outbox state. Failed uploads remain
@@ -760,13 +686,11 @@ migration. Deploy the server before clients negotiate its capabilities.
 | --- | --- |
 | Desktop SQLite `user_version` | Local database layout, not cloud document format |
 | JSON `schemaVersion` | Interpretation of a serialized document |
-| `revision` | Mutable/local source revision, not a format |
-| Snapshot/version `number` | Immutable history sequence |
-| Cloud `headGeneration` | Preferred-pointer concurrency |
+| `revision` | Mutable/local source revision, not a format or a concurrency token |
 | `/api/v1` | HTTP protocol, independent of payload schemas |
 
-Cloud design documents remain wire schema **1**; cloud reports and report
-snapshots remain wire schema **2**. Local report payload schema **1** inside
+Cloud design documents remain wire schema **1**; cloud reports remain wire
+schema **2**. Local report payload schema **1** inside
 a cloud report is a separate format. The backend preserves complete JSON objects
 and references; it does not relabel, down-convert or bulk-rewrite stored content.
 Local design/report validators, SQLite upgrades, offline libraries, native/MCP
@@ -786,8 +710,7 @@ The extension adds these organization-scoped `/limits` fields:
 ```
 
 After observing the positive capabilities, declare the formats this reader
-actually understands on **every** relevant read, upload and preferred-election
-request. Each header is a comma-separated list of 1-16 positive safe integers:
+actually understands on **every** relevant read and upload request. Each header is a comma-separated list of 1-16 positive safe integers:
 
 ```http
 X-Subtubes-Design-Schema-Versions: 1
@@ -797,14 +720,13 @@ X-Subtubes-Report-Schema-Versions: 2
 Do not infer support from app versions or advertise formats the client cannot
 decode. Missing headers permanently mean the legacy design `[1]` or report `[2]`
 reader, even when a future server adds new formats. Malformed headers return
-422 `invalid_reader_capabilities`. Headers do not change upload envelopes or
-participate in immutable upload-ID hashing. Authorization still precedes metadata
-or compatibility responses.
+422 `invalid_reader_capabilities`. Headers do not change upload envelopes.
+Authorization still precedes metadata or compatibility responses.
 
 ### Metadata and mixed-version libraries
 
-With an explicit resource reader header, design discovery/history entries and
-report discovery/history entries include each stored **wire** schema and:
+With an explicit resource reader header, design and report discovery entries
+include each stored **wire** schema and:
 
 ```json
 {
@@ -818,26 +740,21 @@ report discovery/history entries include each stored **wire** schema and:
 
 States are `supported`, `unsupported`, and `invalid`. No compatibility annotation
 is part of the hashed document. Unsupported items are neither decoded into the
-current model nor filtered out. IDs, preferred identity, version numbers and
-pagination remain intact. Supported items on the same page remain usable.
+current model nor filtered out. IDs and pagination remain intact. Supported items on the same page remain usable.
 Supported-schema corrupt JSON, invalid references or mismatched design hashes
 receive `invalid` rather than empty/default documents.
 
-- Design discovery adds the preferred `schemaVersion`. Legacy discovery omits it,
+- Design discovery adds `schemaVersion`. Legacy discovery omits it,
   retaining its existing schema-1 shape.
 - Compatibility-aware `GET /reports?limit=25&cursor=<id>` returns metadata-only
-  `reports` plus `nextCursor`, ordered by ID ascending. Legacy requests retain
-  the existing summary shape/order for supported reports.
-- `GET /reports/:id/snapshots?limit=25&cursor=<number>` returns
-  `{ success, reportId, snapshots, nextCursor }`, newest first. Each entry has
-  `id`, `reportId`, `number`, `schemaVersion`, `contentHash`, `takenAt`, `note`
-  and `compatibility`, never full report content.
-- Report status preserves `snapshots: number[]`; explicit readers additionally
-  receive head schema/compatibility and `snapshotVersions` metadata.
-- Explicit-reader report/snapshot detail reads also include stored `refs`.
+  `reports` (`id`, `name`, `projectName`, `schemaVersion`, `revision`,
+  `contentHash`, `savedAt`, `compatibility`) plus `nextCursor`, ordered by ID
+  ascending. Legacy requests retain the existing summary shape/order for
+  supported reports.
+- Explicit-reader report detail reads also include stored `refs`.
 - Limits are 1-100, default 25; `nextCursor: null` ends a page sequence.
 
-Legacy list/history requests encountering an unsupported item return **426
+Legacy list requests encountering an unsupported item return **426
 `upgrade_required`**, not a filtered or downgraded page. Installed legacy binaries
 cannot gain per-item compatibility UI retroactively. Invalid content reads return
 422 `invalid_document`; unsupported content reads return 426 `upgrade_required`.
@@ -871,30 +788,74 @@ all referenced blobs and designs must exist in the authorized organization befor
 a new publication. JSON content is retained losslessly; desktop semantic decoders
 must separately validate the local model before editing or rendering.
 
-Design append/election locks the design and checks both the current preferred
-document and the proposed winner against the reader and server's supported
-schemas **inside the transaction**. Report updates and snapshot creation likewise
-serialize per report (including snapshots arriving before the head) and check
-the current head. Knowing the latest generation/revision alone is insufficient:
-an incompatible head returns 426 `upgrade_required`, with no mutation.
-Corrupt heads cannot be overwritten through these operations either.
+Design and report writes lock the row and check the **existing** copy against
+the reader and server's supported schemas **inside the transaction**. A copy
+with an unsupported schema returns 426 `upgrade_required` and a damaged one
+422 `invalid_document`; neither is replaced, and nothing is mutated. Corrupt
+copies cannot be overwritten through these operations either. Last write wins
+only between copies the writer can read. Cloning applies the same readability
+checks to its source.
 
-Identical design upload-ID retries still acknowledge the original saved version
-without re-electing it, even if the head has since become incompatible. Reader
-headers never rewrite a pending envelope or its hash. Report snapshot retries
-must match the saved schema, content, references, note, commit and supplied capture
-time, not merely reuse its claimed content hash. Unknown schemas are never decoded
-using a supported validator.
+Reader headers never rewrite an envelope or its hash. Unknown schemas are never
+decoded using a supported validator.
 
 The website report library and viewer also guard their direct database reads:
-unsupported/invalid rows remain visible with version details and cannot open;
-snapshot selectors retain disabled entries and supported snapshots remain usable.
+unsupported/invalid rows remain visible with version details and cannot open.
 This does not implement the desktop UI or its persistence guards.
 
 Before any new format is enabled, release compatible readers, coordinate legacy
 upgrade behavior, add that format's validator and regression tests, and test
 mixed histories and incompatible-head races. Do not add incompatible content
 fields to an existing schema merely because TypeScript calls them optional.
+
+## 5.6 Website: cloning a report
+
+The website is session-authenticated (not bearer) and same-origin only.
+
+```http
+POST /api/organizations/:slug/reports/:reportId/clone
+```
+
+The caller must be a member of the organization identified by `slug` (otherwise
+404). A cross-origin `Origin` header is rejected with 403, and a missing session
+with 401 `unauthenticated`. Success is HTTP 201 with `{ success, reportId, name,
+revision, contentHash, updatedAt }` for a new report owned by the caller, named
+"Copy of <title>" at revision 1.
+
+The **Clone report** button on the report page and the **Clone** button on each
+row of the organization reports list call this route. The report page no longer
+has a snapshot Version picker or snapshot banner, and the list has no Snapshots
+column. The website has no designs UI; designs are cloned through the API or the
+desktop.
+
+## 5.7 Deployment, migration and dormant data
+
+Deploy the website and the desktop **together**. The desktop now calls
+`PUT /designs/:designId`, which an older website build does not have, and the
+new website no longer serves the removed history, preferred, snapshot or status
+routes.
+
+Apply migration `20261015000000_single_copy_designs` (`npm run db:migrate`)
+before deploying the matching server. It is additive: it adds `name`, `kind`,
+`schemaVersion`, `revision`, `content`, `refs`, `contentHash` and `deviceLabel`
+to `design` and backfills each design from its preferred version, else its newest
+version. A design row with no version holds no content and is deleted. The
+migration refuses a destructive `down`; restore a verified backup or write a
+forward migration to roll back.
+
+The old `designVersion` and `reportSnapshot` tables and the
+`preferredVersionId`, `headGeneration` and `versionCount` columns are left in
+place and are no longer read or written. They are dormant; account and
+organization deletion still cascade them. Existing version and snapshot history
+is therefore not shown anywhere. The `20261014000000_design_snapshot_metadata`
+migration remains in the history and is likewise unused.
+
+Document schemas are unchanged: report wire schema 2 and design wire schema 1.
+
+Run `npx tsx --test tests/design-copies.test.ts` for the real-PostgreSQL suite
+of the single-copy design and clone behavior (the other API suites are
+`tests/reports-api.test.ts`, `tests/desktop-api.test.ts` and
+`tests/cloud-push-and-personal-org.test.ts`).
 
 ## 6. Delivery phases
 
@@ -944,14 +905,27 @@ Website:
 - [Browser device page](../app/device/page.tsx)
 - [Device approval UI](../components/device-approval.tsx)
 - [Request-scoped organization workspace](../app/dashboard/organizations/[slug]/page.tsx)
+- [Design push, read and clone](../lib/cloud-push/designs.ts)
+- [Report push, read and clone](../lib/cloud-push/reports.ts)
+- [Document compatibility and reader headers](../lib/cloud-push/document-compatibility.ts)
+- [Shared limits and responses](../lib/cloud-push/common.ts)
+- [Design routes](../app/api/v1/organizations/[orgId]/designs/route.ts), its
+  [`[designId]`](../app/api/v1/organizations/[orgId]/designs/[designId]/route.ts) and
+  [clone](../app/api/v1/organizations/[orgId]/designs/[designId]/clone/route.ts) routes
+- [Report routes](../app/api/v1/organizations/[orgId]/reports/route.ts), its
+  [`[reportId]`](../app/api/v1/organizations/[orgId]/reports/[reportId]/route.ts) and
+  [clone](../app/api/v1/organizations/[orgId]/reports/[reportId]/clone/route.ts) routes
+- [Website clone route](../app/api/organizations/[slug]/reports/[reportId]/clone/route.ts) and
+  [clone button helper](../components/report/clone-report.ts)
+- [Single-copy migration](../migrations/20261015000000_single_copy_designs.ts)
 
 Desktop paths, relative to the desktop repository:
 - `app/src/native.ts`: Tauri command boundary.
 - `app/src/useApplication.ts`: local report navigation/import/export.
 - `app/src/App.tsx`: settings and console-only Dev mode.
 - `app/src-tauri/src/question_agent.rs`: existing macOS Keychain pattern.
-- `app/src-tauri/src/storage.rs` and `src/library.ts`: local snapshots.
-- `src/types.ts`: Report/Snapshot types.
+- `app/src-tauri/src/storage.rs` and `src/library.ts`: local saved reports and cloning.
+- `src/types.ts`: Report/Snapshot types (`Snapshot` is the legacy name of a saved report).
 - `src/attachments/model.ts` and `src/attachments/service.ts`: image references/storage.
 - `src/comments/service.ts`: existing expected-revision pattern.
 - `src/server.ts`: local MCP publication.

@@ -10,9 +10,7 @@ export const LIMITS = {
   supportedDesignSchemaVersions: SUPPORTED_DOCUMENT_SCHEMAS.design,
   documentCompatibilityMetadata: true,
   documentReaderCapabilities: true,
-  designSnapshotMetadata: true,
   maxReportDocumentBytes: 10 * 1024 * 1024, // 10 MiB
-  maxSnapshotDocumentBytes: 10 * 1024 * 1024, // 10 MiB
   maxDesignDocumentBytes: 2 * 1024 * 1024, // 2 MiB
   maxBlobsPerDesign: 500,
   maxBlobBytes: MAX_IMAGE_BYTES,
@@ -20,7 +18,6 @@ export const LIMITS = {
   directImageUploads: true,
   imageUploadConcurrency: 3,
   maxBlobsPerReport: 500,
-  maxSnapshotsPerReport: 100,
   allowedBlobTypes: ["image/png", "image/jpeg", "image/webp", "image/gif"],
 } as const;
 

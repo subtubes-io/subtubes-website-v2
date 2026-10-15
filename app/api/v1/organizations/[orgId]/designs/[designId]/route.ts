@@ -1,30 +1,28 @@
 import { corsPreflightResponse, jsonResponse } from "@/lib/cloud-push/common";
 import { designRequest } from "@/lib/cloud-push/design-api";
-import { DesignError, headState, versionDocument } from "@/lib/cloud-push/designs";
+import { DesignError, designRead, parseUpload, readDesignBody, saveDesign } from "@/lib/cloud-push/designs";
 import { db } from "@/lib/db/client";
 import { readerCapabilities } from "@/lib/cloud-push/document-compatibility";
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ orgId: string; designId: string }> },
-) {
+type Context = { params: Promise<{ orgId: string; designId: string }> };
+
+export async function GET(request: Request, { params }: Context) {
   const { orgId, designId } = await params;
   return designRequest(request, orgId, async () => {
-    const result = await db.selectFrom("design")
-      .innerJoin("designVersion", (join) => join
-        .onRef("designVersion.id", "=", "design.preferredVersionId")
-        .onRef("designVersion.designId", "=", "design.id")
-        .onRef("designVersion.organizationId", "=", "design.organizationId"))
-      .selectAll("designVersion")
-      .select(["design.headGeneration", "design.versionCount", "design.preferredVersionId", "design.ownerId"])
-      .where("design.id", "=", designId).where("design.organizationId", "=", orgId)
-      .executeTakeFirst();
-    if (!result) throw new DesignError(404, "not_found", "Preferred design not found.");
-    return jsonResponse({
-      success: true,
-      ...headState({ ...result, id: designId }),
-      version: versionDocument(result, readerCapabilities(request, "design")),
-    });
+    const design = await db.selectFrom("design").selectAll()
+      .where("id", "=", designId).where("organizationId", "=", orgId).executeTakeFirst();
+    if (!design) throw new DesignError(404, "not_found", "Design not found.");
+    return jsonResponse(designRead(design, readerCapabilities(request, "design")));
+  });
+}
+
+/** Creates the design or replaces its one current copy. The last push wins. */
+export async function PUT(request: Request, { params }: Context) {
+  const { orgId, designId } = await params;
+  return designRequest(request, orgId, async (userId) => {
+    const upload = parseUpload(await readDesignBody(request));
+    const result = await saveDesign(db, orgId, designId, userId, upload, readerCapabilities(request, "design"));
+    return jsonResponse(result, result.created ? 201 : 200);
   });
 }
 

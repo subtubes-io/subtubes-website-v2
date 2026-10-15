@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { corsPreflightResponse, jsonResponse } from "@/lib/cloud-push/common";
 import { designPage, designRequest } from "@/lib/cloud-push/design-api";
-import { parseStoredJson, readerCapabilities, validateStored } from "@/lib/cloud-push/document-compatibility";
+import { readerCapabilities, validateStored } from "@/lib/cloud-push/document-compatibility";
 import { reportCompatibility, reportDocument } from "@/lib/cloud-push/reports";
 import { db } from "@/lib/db/client";
 
@@ -29,24 +29,12 @@ export async function GET(request: Request, { params }: { params: Promise<{ orgI
     }
     const rows = await query.execute();
     const page = reader.explicit ? rows.slice(0, limit) : rows;
-    const ids = page.map((row) => row.id);
-    const snapshots = ids.length ? await db.selectFrom("reportSnapshot")
-      .selectAll()
-      .where("organizationId", "=", orgId).where("reportId", "in", ids).orderBy("number", "asc").execute() : [];
     const reports = page.map((row) => {
       const state = reportCompatibility(row, reader);
-      const history = snapshots.filter((snapshot) => snapshot.reportId === row.id);
-      const latest = history.at(-1);
-      const latestCompatibility = latest ? reportCompatibility(latest, reader) : undefined;
       const metadata = {
         id: row.id, name: row.projectName, projectName: row.projectName,
         ...(reader.explicit ? { schemaVersion: row.schemaVersion, revision: row.revision, contentHash: row.contentHash } : {}),
         savedAt: row.updatedAt.toISOString(),
-        snapshots: { count: history.length, latest: latest ? {
-          number: latest.number, takenAt: latest.takenAt.toISOString(),
-          commit: latestCompatibility?.status === "supported" && latest.commit !== null ? parseStoredJson(latest.commit, latest.id) : null,
-          ...(reader.explicit ? { id: latest.id, schemaVersion: latest.schemaVersion, compatibility: latestCompatibility } : {}),
-        } : undefined },
         ...(reader.explicit || state.status === "invalid" ? { compatibility: state } : {}),
       };
       if (reader.explicit || state.status !== "supported") return metadata;

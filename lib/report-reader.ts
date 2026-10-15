@@ -1,13 +1,12 @@
 import type { Selectable } from "kysely";
 import type { Report } from "@subtubes/report-ui";
 import { normalizeReport } from "../report-ui/src/report-utils";
-import { commitBinding, type CommitBinding } from "@subtubes/report-ui/model/snapshots";
 import type { Database } from "@/lib/db/types";
-import { DocumentError, parseStoredJson, type Compatibility } from "@/lib/cloud-push/document-compatibility";
+import { DocumentError, type Compatibility } from "@/lib/cloud-push/document-compatibility";
 import { reportCompatibility, reportDocument } from "@/lib/cloud-push/reports";
 
-type StoredReport = Selectable<Database["report"]> | Selectable<Database["reportSnapshot"]>;
-type WebsiteReport = { compatibility: Compatibility; report?: Report; commit?: CommitBinding };
+type StoredReport = Selectable<Database["report"]>;
+type WebsiteReport = { compatibility: Compatibility; report?: Report };
 
 export function readWebsiteReport(row: StoredReport): WebsiteReport {
   const reader = { versions: [2], explicit: true };
@@ -30,16 +29,7 @@ export function readWebsiteReport(row: StoredReport): WebsiteReport {
     console.error("Invalid report view document", row.id, report);
     return { compatibility: { status: "invalid", schemaVersion: row.schemaVersion, message: "Invalid document" } };
   }
-  let commit;
-  if ("commit" in row && row.commit !== null) {
-    const result = commitBinding.safeParse(parseStoredJson(row.commit, row.id));
-    if (!result.success) {
-      console.error("Invalid snapshot commit metadata", row.id, result.error);
-      return { compatibility: { status: "invalid", schemaVersion: row.schemaVersion, message: "Invalid document" } };
-    }
-    commit = result.data;
-  }
-  return { compatibility, report, commit };
+  return { compatibility, report };
 }
 
 export function requireWebsiteReport(row: StoredReport): Report {

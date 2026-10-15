@@ -35,7 +35,7 @@ async function OrganizationDetails({
   if (!organization) notFound();
 
   const canInvite = organization.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()));
-  const [members, invitations, reportRows, snapshotRows] = await Promise.all([
+  const [members, invitations, reportRows] = await Promise.all([
     db.selectFrom("member")
       .innerJoin("user", "user.id", "member.userId")
       .select(["member.id", "user.name", "user.email", "member.role"])
@@ -54,26 +54,11 @@ async function OrganizationDetails({
       .where("organizationId", "=", organization.id)
       .orderBy("updatedAt", "desc")
       .execute(),
-    db.selectFrom("reportSnapshot")
-      .selectAll()
-      .where("organizationId", "=", organization.id)
-      .orderBy("number", "asc")
-      .execute(),
   ]);
-
-  const snapshotsByReport = new Map<string, typeof snapshotRows>();
-  for (const s of snapshotRows) {
-    const list = snapshotsByReport.get(s.reportId) ?? [];
-    list.push(s);
-    snapshotsByReport.set(s.reportId, list);
-  }
 
   const reportSummaries: OrganizationReportSummary[] = reportRows.map((r) => {
     const decoded = readWebsiteReport(r);
     const reportData = decoded.report;
-    const reportSnaps = snapshotsByReport.get(r.id) ?? [];
-    const latestSnap = reportSnaps[reportSnaps.length - 1];
-    const latestCommit = latestSnap ? readWebsiteReport(latestSnap).commit : undefined;
     const flags = reportData?.flags ?? [];
     const flagCounts = {
       high: flags.filter((f) => f.severity === "high").length,
@@ -89,16 +74,6 @@ async function OrganizationDetails({
       projectName: r.projectName,
       savedAt: r.updatedAt.toISOString(),
       stats: reportData?.stats,
-      snapshots: {
-        count: reportSnaps.length,
-        latest: latestSnap
-          ? {
-              number: latestSnap.number,
-              takenAt: latestSnap.takenAt.toISOString(),
-              commit: latestCommit,
-            }
-          : undefined,
-      },
       info: {
         preview: reportData?.narrative?.slice(0, 200) || "",
         flags: flagCounts,

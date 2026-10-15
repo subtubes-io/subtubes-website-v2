@@ -14,9 +14,10 @@ Source processing is capped at 20 MiB and 40 million pixels. Oversized animation
 are rejected rather than silently flattened. Small images are not re-encoded.
 Native validation remains authoritative; MCP file uploads must already fit.
 
-Existing image bytes, report snapshots, hashes and pending document envelopes
+Existing image bytes, hashes and pending document envelopes
 are never rewritten automatically. Oversized historical references require
-explicit replacement in editable content; immutable snapshots cannot be changed.
+explicit replacement in editable content; the cloud keeps one current copy of a
+report, so a pushed report is replaced only by pushing a new one.
 Missing, corrupt or oversized references block desktop publication.
 
 ## Capabilities and upload protocol
@@ -91,16 +92,16 @@ uploads remain ready and are skipped on retry.
 
 Desktop uploads up to three independent images concurrently. On failure it
 stops admitting new work, waits for active work to settle, and does not publish
-the report. All images must be ready before designs/snapshots/report publication.
+the report. All images must be ready before designs and the report are published.
 Each walkthrough step retains its image hash; frozen design Markdown and preview
 hashes remain in report content. All image references, including `shots`, must
 appear in that document's `refs.blobs` and exist in the authorized organization.
 This preserves report association without embedding binary data in report JSON.
 
-For report creation, the existing backend also accepts `If-Match: *` as a
-create-only guard and returns 409 if the report already exists. Desktop uses
-this form because the hosted response layer can convert `If-None-Match: *`
-into a bodyless 304 on PUT. Updates still require the exact prior numeric revision.
+`PUT /reports/{id}` creates the report or replaces its one current copy (last
+write wins). It needs no precondition: any `If-Match` or `If-None-Match` header
+is ignored, so the hosted response layer's conversion of `If-None-Match: *`
+into a bodyless 304 no longer matters.
 
 New blobs store private storage paths, MIME, bytes, width and height rather than
 binary data in PostgreSQL. Existing blobs keep their original `data`; reads

@@ -1264,8 +1264,30 @@ input:focus-visible {
   flex: none;
 }
 
-.report-viewer-wrap .snapshot-banner {
+.report-viewer-wrap .report-notice {
   flex: none;
+}
+
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.report-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  background: var(--accent-glow);
+  border-bottom: 1px solid var(--accent);
+}
+
+.report-notice-error {
+  color: var(--danger, #c0392b);
+  font-size: 13px;
 }
 
 .report-viewer-wrap main.report-view {

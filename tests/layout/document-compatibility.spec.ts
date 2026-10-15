@@ -31,13 +31,6 @@ test.beforeAll(async ({ request }) => {
         values ($1,$2,$3,$4,$5,1,'fixture-hash',$6,'{"blobs":[],"designs":[]}',now())`,
       [reportIds[index], organizationId, userId, name, index === 1 ? 3 : 2, index === 2 ? "broken" : JSON.stringify(content)]);
     }
-    for (const [index, version] of [2, 3, 2].entries()) {
-      await pool.query(`insert into "reportSnapshot"
-        (id,"reportId","organizationId","ownerId",number,"takenAt","schemaVersion","contentHash",report,refs)
-        values ($1,$2,$3,$4,$5,now(),$6,'snapshot-fixture-hash',$7,'{"blobs":[],"designs":[]}')`,
-      [randomUUID(), reportIds[0], organizationId, userId, index + 1, version,
-        index === 2 ? "broken" : JSON.stringify({ ...reportFixture(), title: `Snapshot ${index + 1}` })]);
-    }
   } finally {
     await pool.end();
   }
@@ -56,7 +49,7 @@ test.afterAll(async ({ request }) => {
   }
 });
 
-test("document compatibility library, content guards and snapshot history", async ({ page }, testInfo) => {
+test("document compatibility library, content guards and cloning a report", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   const login = await page.request.post("/api/auth/sign-in/email", { data: { email, password } });
   expect(login.ok(), await login.text()).toBeTruthy();
@@ -74,13 +67,14 @@ test("document compatibility library, content guards and snapshot history", asyn
     await expect(page.getByText("Invalid document", { exact: true })).toBeVisible();
     const future = page.locator('[data-id]').filter({ hasText: "Future report" });
     await expect(future.getByRole("link", { name: "View" })).toHaveCount(0);
+    await expect(future.getByRole("button", { name: "Clone" })).toHaveCount(0);
   }
   await capture("mixed-library");
   await page.goto(`/dashboard/organizations/${slug}/reports/${reportIds[1]}`);
   if (!before) {
     await expect(page.getByRole("heading", { name: "Requires a newer app", exact: true })).toBeVisible();
     await expect(page.getByText("Wire schema 3", { exact: false })).toBeVisible();
-    await expect(page.getByLabel("Snapshots")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clone report" })).toHaveCount(0);
   } else {
     await expect(page.getByLabel("Snapshots")).toBeVisible();
   }
@@ -90,33 +84,25 @@ test("document compatibility library, content guards and snapshot history", asyn
   else await expect(page.getByText("This page could not be found.")).toBeVisible();
   await capture("invalid-detail");
   await page.goto(`/dashboard/organizations/${slug}/reports/${reportIds[0]}`);
-  await expect(page.getByLabel("Snapshots")).toBeVisible();
   if (!before) {
-    const options = page.getByLabel("Snapshots").locator("option");
-    await expect(options.filter({ hasText: "Requires a newer app" })).toHaveJSProperty("disabled", true);
-    await expect(options.filter({ hasText: "Invalid document" })).toHaveJSProperty("disabled", true);
-    await page.getByLabel("Snapshots").selectOption("1");
-    await expect(page.getByLabel("Snapshots")).toHaveValue("1");
-    await expect(page.getByRole("heading", { name: "Snapshot 1", exact: true })).toBeVisible();
-    const denied = await page.request.get(`/api/organizations/${slug}/reports/${reportIds[0]}/snapshots/2`);
-    expect(denied.status()).toBe(426);
-    const corrupt = await page.request.get(`/api/organizations/${slug}/reports/${reportIds[0]}/snapshots/3`);
-    expect(corrupt.status()).toBe(422);
-    await page.getByLabel("Snapshots").selectOption("live");
+    await expect(page.getByLabel("Snapshots")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Clone report", exact: true })).toBeVisible();
     await expect(page.getByRole("heading", { name: "Supported report", exact: true })).toBeVisible();
-    const snapshotUrl = `/api/organizations/${slug}/reports/${reportIds[0]}/snapshots/1`;
-    await page.route(snapshotUrl, async (route) => {
-      await route.fulfill({
-        json: { schemaVersion: 2, report: { ...reportFixture(), schemaVersion: 2 } },
-      });
-    });
-    await page.getByLabel("Snapshots").selectOption("1");
-    const upgradeAlert = page.getByRole("alert").filter({ hasText: "Requires a newer app" });
-    await expect(upgradeAlert).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Supported report", exact: true })).toBeVisible();
-    await page.unroute(snapshotUrl);
-    await page.getByRole("button", { name: "Back to live report", exact: true }).click();
-    await expect(upgradeAlert).toHaveCount(0);
+    await page.getByRole("button", { name: "Clone report", exact: true }).click();
+    await page.waitForURL((url) => url.pathname.includes("/reports/") && !url.pathname.endsWith(reportIds[0]));
+    await expect(page.getByRole("heading", { name: "Copy of Supported report", exact: true })).toBeVisible();
+    const copyId = decodeURIComponent(new URL(page.url()).pathname.split("/").pop()!);
+    expect(copyId).not.toBe(reportIds[0]);
+    await capture("cloned-report");
+    await page.goto(`/dashboard/organizations/${slug}`);
+    await expect(page.locator("[data-id]").filter({ hasText: "Copy of Supported report" })).toHaveCount(1);
+    const original = page.locator(`[data-id="${reportIds[0]}"]`);
+    await original.getByRole("button", { name: "Clone" }).click();
+    await expect(page.locator("[data-id]").filter({ hasText: "Copy of Supported report" })).toHaveCount(2);
+    const gone = await page.request.get(`/api/organizations/${slug}/reports/${reportIds[0]}/snapshots/1`);
+    expect(gone.status()).toBe(404);
+  } else {
+    await expect(page.getByLabel("Snapshots")).toBeVisible();
   }
-  await capture("snapshot-history");
+  await capture("report-clone");
 });

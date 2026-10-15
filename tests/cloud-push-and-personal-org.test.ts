@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID, createHash } from "node:crypto";
 import { loadEnvConfig } from "@next/env";
 import { Pool } from "pg";
+import sharp from "sharp";
 
 loadEnvConfig(process.cwd());
 
@@ -200,10 +201,10 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     const limits = await limitsRes.json();
     assert.deepEqual(limits.supportedSchemaVersions, [2]);
     assert.equal(limits.maxReportDocumentBytes, 10 * 1024 * 1024);
-    assert.equal(limits.maxBlobBytes, 5 * 1024 * 1024);
+    assert.equal(limits.maxBlobBytes, 2 * 1024 * 1024);
 
     // B. Blobs flow
-    const imageBytes = Buffer.from("fake-png-image-content-for-test");
+    const imageBytes = await sharp({ create: { width: 8, height: 8, channels: 3, background: "purple" } }).png().toBuffer();
     const imageHash = createHash("sha256").update(imageBytes).digest("hex");
 
     // POST /blobs/missing before upload -> reported missing
@@ -245,12 +246,10 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     assert.deepEqual(missingPostData.missing, []);
 
     // C. Designs flow
-    const inlineDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
-      method: "POST",
+    const inlineDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
+      method: "PUT",
       headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
-        uploadId: randomUUID(),
-        expectedHeadGeneration: 0,
         document: {
           schemaVersion: 1,
           revision: 1,
@@ -265,139 +264,67 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     const inlineDesignData = await inlineDesignRes.json();
     assert.equal(inlineDesignData.error.code, "inline_media");
 
-    const createDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
-      method: "POST",
+    const designBody = (revision: number, name: string, nodes: unknown[]) => JSON.stringify({
+      document: {
+        schemaVersion: 1, revision, name, kind: "swimlane",
+        content: { name, kind: "swimlane", nodes }, refs: { blobs: [imageHash] },
+      },
+    });
+    const createDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
+      method: "PUT",
       headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uploadId: randomUUID(),
-        expectedHeadGeneration: 0,
-        document: {
-          schemaVersion: 1,
-          revision: 1,
-          name: "Test Swimlane",
-          kind: "swimlane",
-          content: { nodes: [] },
-          refs: { blobs: [imageHash] },
-        },
-      }),
+      body: designBody(1, "Test Swimlane", []),
     });
     assert.equal(createDesignRes.status, 201);
-    assert.equal((await createDesignRes.json()).outcome, "saved_and_preferred");
+    const createdDesign = await createDesignRes.json();
+    assert.equal(createdDesign.created, true);
+    assert.equal(createdDesign.designId, designId);
+    assert.match(createdDesign.contentHash, /^sha256:[a-f0-9]{64}$/);
 
-    const conflictDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
-      method: "POST",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uploadId: randomUUID(),
-        expectedHeadGeneration: 0,
-        document: {
-          schemaVersion: 1,
-          revision: 2,
-          name: "Test Swimlane Updated",
-          kind: "swimlane",
-          content: { nodes: [1] },
-          refs: { blobs: [imageHash] },
-        },
-      }),
-    });
-    assert.equal(conflictDesignRes.status, 201);
-    const conflictDesignData = await conflictDesignRes.json();
-    assert.equal(conflictDesignData.outcome, "saved_requires_selection");
-    assert.equal(conflictDesignData.headGeneration, 1);
-
-    const updateDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/versions`, {
-      method: "POST",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        uploadId: randomUUID(),
-        expectedHeadGeneration: 1,
-        document: {
-          schemaVersion: 1,
-          revision: 2,
-          name: "Test Swimlane Updated",
-          kind: "swimlane",
-          content: { nodes: [1] },
-          refs: { blobs: [imageHash] },
-        },
-      }),
-    });
-    assert.equal(updateDesignRes.status, 201);
-    assert.equal((await updateDesignRes.json()).outcome, "saved_and_preferred");
-
-    // D. Snapshots flow
-    // GET /reports/{reportId}/status before report created -> 404
-    const statusPreRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/status`, {
-      headers: authHeaders,
-    });
-    assert.equal(statusPreRes.status, 404);
-
-    // PUT /reports/{reportId}/snapshots/1 with unsupported schemaVersion -> 422
-    const unsuppSnapRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/snapshots/1`, {
+    // A second push replaces the one current copy: last write wins, with no version or generation to track.
+    const replaceDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, {
       method: "PUT",
       headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schemaVersion: 99,
-        number: 1,
-        contentHash: "sha256:fakehash",
-        report: { title: "Snap" },
-      }),
+      body: designBody(2, "Test Swimlane Updated", [1]),
     });
-    assert.equal(unsuppSnapRes.status, 422);
-    const unsuppSnapData = await unsuppSnapRes.json();
-    assert.equal(unsuppSnapData.error.code, "unsupported_schema_version");
+    assert.equal(replaceDesignRes.status, 200);
+    const replacedDesign = await replaceDesignRes.json();
+    assert.equal(replacedDesign.created, false);
+    assert.notEqual(replacedDesign.contentHash, createdDesign.contentHash);
+    assert.equal(Object.hasOwn(replacedDesign, "headGeneration"), false);
+    assert.equal(Object.hasOwn(replacedDesign, "outcome"), false);
 
-    // PUT /reports/{reportId}/snapshots/1 valid -> 200
-    const snapRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/snapshots/1`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schemaVersion: 2,
-        number: 1,
-        takenAt: "2026-10-12T18:00:00Z",
-        contentHash: "sha256:first-snapshot-hash",
-        report: { title: "First Snapshot" },
-        refs: { blobs: [imageHash], designs: [] },
-      }),
-    });
-    assert.equal(snapRes.status, 200);
+    const readDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}`, { headers: authHeaders });
+    assert.equal(readDesignRes.status, 200);
+    const readDesign = await readDesignRes.json();
+    assert.equal(readDesign.document.name, "Test Swimlane Updated");
+    assert.equal(readDesign.document.revision, 2);
+    assert.equal(readDesign.contentHash, replacedDesign.contentHash);
 
-    // Idempotent re-put of same snapshot hash -> 200
-    const snapReRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/snapshots/1`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schemaVersion: 2,
-        number: 1,
-        takenAt: "2026-10-12T18:00:00Z",
-        contentHash: "sha256:first-snapshot-hash",
-        report: { title: "First Snapshot" },
-        refs: { blobs: [imageHash], designs: [] },
-      }),
-    });
-    assert.equal(snapReRes.status, 200);
+    const cloneDesignRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs/${designId}/clone`, { method: "POST", headers: authHeaders });
+    assert.equal(cloneDesignRes.status, 201);
+    const clonedDesign = await cloneDesignRes.json();
+    assert.notEqual(clonedDesign.designId, designId);
+    assert.equal(clonedDesign.name, "Copy of Test Swimlane Updated");
+    const listDesignsRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/designs`, { headers: authHeaders });
+    const listedDesigns = (await listDesignsRes.json()).designs as { id: string; name: string }[];
+    assert.deepEqual(listedDesigns.map((item) => item.name).sort(), ["Copy of Test Swimlane Updated", "Test Swimlane Updated"]);
+    await pool.query('DELETE FROM "design" WHERE "id" = $1', [clonedDesign.designId]);
 
-    // Overwriting snapshot with different contentHash -> 409 snapshot_immutable
-    const snapConflictRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/snapshots/1`, {
-      method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        schemaVersion: 2,
-        number: 1,
-        takenAt: "2026-10-12T18:00:00Z",
-        contentHash: "sha256:different-snapshot-hash",
-        report: { title: "Mutated Snapshot" },
-        refs: { blobs: [imageHash], designs: [] },
-      }),
-    });
-    assert.equal(snapConflictRes.status, 409);
-    const snapConflictData = await snapConflictRes.json();
-    assert.equal(snapConflictData.error.code, "snapshot_immutable");
+    // D. The retired history endpoints are gone.
+    for (const path of [
+      `designs/${designId}/versions`, `designs/${designId}/preferred`,
+      `reports/${reportId}/snapshots/1`, `reports/${reportId}/status`,
+    ]) {
+      const gone = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/${path}`, { headers: authHeaders });
+      assert.equal(gone.status, 404, `${path} should no longer exist`);
+    }
 
     // E. Report head flow
     // PUT /reports/{reportId} with missing blob -> 422 missing_blobs
     const missingBlobReportRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}`, {
       method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-None-Match": "*" },
+      headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
         schemaVersion: 2,
         revision: 1,
@@ -417,7 +344,7 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     // PUT /reports/{reportId} valid create -> 200
     const createReportRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}`, {
       method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-None-Match": "*" },
+      headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
         schemaVersion: 2,
         revision: 1,
@@ -432,10 +359,10 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     });
     assert.equal(createReportRes.status, 200);
 
-    // PUT /reports/{reportId} update with If-Match: 1 -> 200
+    // PUT /reports/{reportId} replaces the one current copy, with no If-Match to supply.
     const updateReportRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}`, {
       method: "PUT",
-      headers: { ...authHeaders, "Content-Type": "application/json", "If-Match": "1" },
+      headers: { ...authHeaders, "Content-Type": "application/json" },
       body: JSON.stringify({
         schemaVersion: 2,
         revision: 2,
@@ -450,17 +377,38 @@ test("cloud push API contract (/api/v1/organizations/{orgId})", async () => {
     });
     assert.equal(updateReportRes.status, 200);
 
-    // F. GET /reports/{reportId}/status
-    const statusPostRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/status`, {
-      headers: authHeaders,
+    // A push from a computer that is behind simply wins: the last write is the current copy.
+    const staleReportRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}`, {
+      method: "PUT",
+      headers: { ...authHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        schemaVersion: 2,
+        revision: 1,
+        contentHash: "sha256:report-head-hash-1b",
+        project: { name: "Test Project" },
+        report: { title: "Head from a slower computer" },
+        refs: { blobs: [imageHash], designs: [] },
+      }),
     });
-    assert.equal(statusPostRes.status, 200);
-    const statusData = await statusPostRes.json();
-    assert.equal(statusData.revision, 2);
-    assert.equal(statusData.contentHash, "sha256:report-head-hash-2");
-    assert.deepEqual(statusData.snapshots, [1]);
+    assert.equal(staleReportRes.status, 200);
+    const readReport = await (await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}`, { headers: authHeaders })).json();
+    assert.equal(readReport.report.title, "Head from a slower computer");
+    assert.equal(readReport.revision, 1);
+
+    // F. Cloning makes an independent report with its own ID.
+    const cloneReportRes = await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${reportId}/clone`, { method: "POST", headers: authHeaders });
+    assert.equal(cloneReportRes.status, 201);
+    const clonedReport = await cloneReportRes.json();
+    assert.notEqual(clonedReport.reportId, reportId);
+    assert.equal(clonedReport.name, "Copy of Head from a slower computer");
+    assert.equal(clonedReport.revision, 1);
+    const readClone = await (await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports/${clonedReport.reportId}`, { headers: authHeaders })).json();
+    assert.equal(readClone.report.title, "Copy of Head from a slower computer");
+    const listed = (await (await fetch(`${baseUrl}/api/v1/organizations/${orgId}/reports`, { headers: authHeaders })).json()).reports as { id: string; snapshots?: unknown }[];
+    assert.equal(listed.length, 2);
+    assert.ok(listed.every((item) => !("snapshots" in item)), "the list no longer reports snapshots");
+    await pool.query('DELETE FROM "report" WHERE "id" = $1', [clonedReport.reportId]);
   } finally {
-    await pool.query('DELETE FROM "reportSnapshot" WHERE "reportId" = $1', [reportId]);
     await pool.query('DELETE FROM "report" WHERE "id" = $1', [reportId]);
     await pool.query('DELETE FROM "design" WHERE "id" = $1', [designId]);
     await pool.query('DELETE FROM "blob" WHERE "organizationId" = $1', [orgId]);

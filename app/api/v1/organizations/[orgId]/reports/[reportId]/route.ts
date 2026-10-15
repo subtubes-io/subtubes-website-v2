@@ -11,8 +11,7 @@ export async function PUT(request: Request, { params }: Context) {
   const { orgId, reportId } = await params;
   return designRequest(request, orgId, async (userId) => {
     const upload = parseReportUpload(await readDesignBody(request, LIMITS.maxReportDocumentBytes));
-    const result = await saveReport(db, orgId, reportId, userId, upload, readerCapabilities(request, "report"),
-      request.headers.get("if-match")?.trim() ?? null, request.headers.get("if-none-match")?.trim() ?? null);
+    const result = await saveReport(db, orgId, reportId, userId, upload, readerCapabilities(request, "report"));
     return jsonResponse(result);
   });
 }
