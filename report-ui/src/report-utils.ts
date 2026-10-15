@@ -76,7 +76,7 @@ export function normalizeReport(raw: unknown): Report | string {
   const arr = <T,>(v: T[] | undefined): T[] => Array.isArray(v) ? v : [];
   const hasMap = j.map && Array.isArray(j.map.nodes) && Array.isArray(j.map.layers) && Array.isArray(j.map.lanes);
   if (!(j.files || j.narrative || hasMap || arr(j.flows).length || arr(j.groups).length || swimlanes.data.length)) {
-    return "This does not look like a Diff Engine report (expected narrative, map, flows, groups or files).";
+    return "This does not look like a Subtubes report (expected narrative, map, flows, groups or files).";
   }
   const files = [...arr(j.files)];
   if (!files.length) {
