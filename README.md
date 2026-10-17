@@ -76,7 +76,8 @@ Production: <https://subtubes.com> (also <https://www.subtubes.com>).
 Vercel project: `iosubtubes-projects/subtubes-remote`; alias:
 <https://subtubes-remote.vercel.app>. Supabase PostgreSQL is in `us-west-2`,
 with Vercel functions in `sfo1`. Supabase hosts the database only, not auth.
-Pushes to the connected production branch trigger deployment.
+Deploy using `vercel deploy --prod`. The project currently has no Git repository
+connection; pushes alone will not redeploy it until that integration is enabled.
 
 Disable Supabase's Data API: auth/session tables in `public` must not be exposed
 through REST/GraphQL. Better Auth permissions do not protect that API.
