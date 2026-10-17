@@ -19,11 +19,7 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"],
-      "@subtubes/report-ui": ["./report-ui/src/index.ts"],
-      "@subtubes/report-ui/styles.css": ["./report-ui/src/styles.css"],
-      "@subtubes/report-ui/fixtures": ["./report-ui/src/fixtures.ts"],
-      "@subtubes/report-ui/model/*": ["./report-ui/src/model/*"]
+      "@/*": ["./*"]
     }
   },
   "include": [
@@ -34,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "report-ui/src/**/*.test.ts*", "report-ui/src/*-test-utils.ts"]
+  "exclude": ["node_modules"]
 }

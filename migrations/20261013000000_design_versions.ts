@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { Kysely, sql } from "kysely";
-import { computeCanonicalContentHash } from "../lib/cloud-push/hash";
+import { computeCanonicalContentHash } from "./helpers/content-hash";
 
 export async function up(db: Kysely<unknown>): Promise<void> {
   await db.schema.alterTable("design")

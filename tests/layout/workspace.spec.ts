@@ -103,6 +103,8 @@ for (const width of [390, 1440, 1920]) {
       } else {
         await expect(page.getByRole("link", { name: "All organizations" }))
           .toHaveAttribute("href", "/dashboard");
+        await expect(page.getByRole("table", { name: "Members", exact: true })).toBeVisible();
+        await expect(page.getByRole("heading", { name: "Reports", exact: true })).toHaveCount(0);
       }
 
       await expectFluidLayout(page, width);
@@ -247,7 +249,9 @@ test("API at 1440px", async ({ page }, testInfo) => {
   await page.goto("/api-page");
   await expect(page.locator(".api-pre")).toContainText('"status": "ok"');
   await expect(page.getByRole("link", { name: "Get started" })).toBeVisible();
-  await expectFluidLayout(page, 1440);
+  await expect(page.getByRole("heading", { name: "API endpoint response" })).toBeVisible();
+  await expect(page.locator(".dashboard-wrap")).toHaveCSS("padding-top", "24px");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1440);
   await page.evaluate(() => document.fonts.ready);
   const path = testInfo.outputPath("api.png");
   await page.screenshot({

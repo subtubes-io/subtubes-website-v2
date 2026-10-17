@@ -4,16 +4,11 @@ import type { ProfileLinks } from "@/lib/profile-links";
 export interface Database {
   account: AccountTable;
   blob: BlobTable;
-  blobUpload: BlobUploadTable;
-  design: DesignTable;
-  designVersion: DesignVersionTable;
   deviceCode: DeviceCodeTable;
   invitation: InvitationTable;
   member: MemberTable;
   organization: OrganizationTable;
   profileLinks: ProfileLinks & { userId: string };
-  report: ReportTable;
-  reportSnapshot: ReportSnapshotTable;
   session: SessionTable;
   user: UserTable;
   verification: VerificationTable;
@@ -118,90 +113,5 @@ interface BlobTable {
   storagePath: string | null;
   width: number | null;
   height: number | null;
-  createdAt: Generated<Date>;
-}
-
-interface BlobUploadTable {
-  id: string;
-  organizationId: string;
-  ownerId: string;
-  hash: string;
-  contentType: string;
-  byteSize: number;
-  resourceKind: "report" | "design";
-  resourceId: string;
-  storagePath: string;
-  expiresAt: Date;
-  completedAt: Date | null;
-  createdAt: Generated<Date>;
-}
-
-interface DesignTable {
-  id: string;
-  organizationId: string;
-  ownerId: string;
-  name: string;
-  kind: string;
-  schemaVersion: number;
-  revision: number;
-  content: string;
-  refs: string;
-  contentHash: string;
-  deviceLabel: string | null;
-  /** Left by the retired version history; no longer read or written. */
-  preferredVersionId: string | null;
-  headGeneration: Generated<number>;
-  versionCount: Generated<number>;
-  createdAt: Generated<Date>;
-  updatedAt: Generated<Date>;
-}
-
-interface DesignVersionTable {
-  id: string;
-  designId: string;
-  organizationId: string;
-  number: number;
-  uploadId: string;
-  requestHash: string;
-  contentHash: string;
-  authorId: string;
-  deviceLabel: string | null;
-  name: string;
-  kind: string;
-  schemaVersion: number;
-  revision: number;
-  content: string;
-  refs: string;
-  snapshot: string | null;
-  createdAt: Generated<Date>;
-}
-
-interface ReportTable {
-  id: string;
-  organizationId: string;
-  ownerId: string;
-  projectName: string;
-  schemaVersion: number;
-  revision: number;
-  contentHash: string;
-  report: string;
-  refs: string;
-  createdAt: Generated<Date>;
-  updatedAt: Generated<Date>;
-}
-
-interface ReportSnapshotTable {
-  id: string;
-  reportId: string;
-  organizationId: string;
-  ownerId: string;
-  number: number;
-  takenAt: Date;
-  note: string | null;
-  commit: string | null;
-  schemaVersion: number;
-  contentHash: string;
-  report: string;
-  refs: string;
   createdAt: Generated<Date>;
 }

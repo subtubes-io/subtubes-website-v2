@@ -176,7 +176,8 @@ test("members cannot manage invitations, outsiders cannot view organizations, er
   expect(denied.ok()).toBeFalsy();
   await signIn(page.request, outsiderEmail);
   await page.goto("/dashboard");
-  await expect(organizations.getByRole("status")).toContainText("You are not in any organizations yet.");
+  await expect(organizations).toContainText("Outside user's Workspace");
+  await expect(organizations).not.toContainText("Example workspace");
   await expect(page.getByRole("textbox", { name: "Organization name" })).toBeVisible();
   await page.goto(`/dashboard/organizations/${slug}`);
   await expect(page.getByRole("heading", { name: "Example workspace" })).toHaveCount(0);

@@ -81,7 +81,7 @@ async function Dashboard() {
           ],
           rows: visibleOrganizations,
           rowKey: (organization) => organization.id,
-          emptyMessage: "You are not in any organizations yet. Create one to share reports with your team.",
+          emptyMessage: "You are not in any organizations yet. Create one to get started with your team.",
         }} />
       </section>
     </>

@@ -3,13 +3,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { SiteHeader } from "@/components/site-header";
 import { OrganizationTables } from "@/components/organization-tables";
-import {
-  OrganizationReportsList,
-  type OrganizationReportSummary,
-} from "@/components/report/organization-reports-list";
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
-import { readWebsiteReport } from "@/lib/report-reader";
 
 async function OrganizationDetails({
   params,
@@ -35,7 +30,7 @@ async function OrganizationDetails({
   if (!organization) notFound();
 
   const canInvite = organization.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()));
-  const [members, invitations, reportRows] = await Promise.all([
+  const [members, invitations] = await Promise.all([
     db.selectFrom("member")
       .innerJoin("user", "user.id", "member.userId")
       .select(["member.id", "user.name", "user.email", "member.role"])
@@ -49,43 +44,7 @@ async function OrganizationDetails({
       .orderBy("createdAt", "desc")
       .orderBy("id", "asc")
       .execute() : Promise.resolve([]),
-    db.selectFrom("report")
-      .selectAll()
-      .where("organizationId", "=", organization.id)
-      .orderBy("updatedAt", "desc")
-      .execute(),
   ]);
-
-  const reportSummaries: OrganizationReportSummary[] = reportRows.map((r) => {
-    const decoded = readWebsiteReport(r);
-    const reportData = decoded.report;
-    const flags = reportData?.flags ?? [];
-    const flagCounts = {
-      high: flags.filter((f) => f.severity === "high").length,
-      medium: flags.filter((f) => f.severity === "medium").length,
-      low: flags.filter((f) => f.severity === "low").length,
-    };
-
-    return {
-      id: r.id,
-      name: reportData?.title || r.projectName || r.id,
-      title: reportData?.title,
-      compatibility: decoded.compatibility,
-      projectName: r.projectName,
-      savedAt: r.updatedAt.toISOString(),
-      stats: reportData?.stats,
-      info: {
-        preview: reportData?.narrative?.slice(0, 200) || "",
-        flags: flagCounts,
-        shots: Object.keys(reportData?.shots ?? {}).length,
-        visualScenarios: reportData?.visual?.scenarios?.length ?? 0,
-        mapNodes: reportData?.map?.nodes?.length ?? 0,
-        flows: reportData?.result?.flows?.length ?? 0,
-        base: reportData?.base,
-        head: reportData?.head,
-      },
-    };
-  });
 
   return (
     <>
@@ -97,10 +56,6 @@ async function OrganizationDetails({
           All organizations
         </Link>
       </header>
-
-      <section className="dashboard-section" aria-labelledby="organization-reports">
-        <OrganizationReportsList slug={slug} reports={reportSummaries} />
-      </section>
 
       <section className="dashboard-section" aria-labelledby="organization-members-section">
         <h2 id="organization-members-section" className="dashboard-section-title">
