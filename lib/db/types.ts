@@ -1,7 +1,23 @@
 import type { Generated } from "kysely";
 import type { ProfileLinks } from "@/lib/profile-links";
+import type { ParticipantTable, ReviewBlobTable, ReviewTable, RevisionTable, UploadTable } from "@/lib/reviews/types";
 
 export interface Database {
+  review: ReviewTable;
+  reviewReport: {
+    id: string; organizationId: string; revisionId: string; ownerId: string | null;
+    ownerName: string; clientId: string; kind: "commit" | "range"; title: string;
+    envelope: import("@/lib/reviews/manifest").Manifest["reports"][number]; createdAt: Generated<Date>;
+  };
+  reviewRevision: RevisionTable;
+  reviewBlob: ReviewBlobTable;
+  reviewParticipant: ParticipantTable;
+  reviewUpload: UploadTable;
+  reviewRevisionBlob: { revisionId: string; organizationId: string; hash: string };
+  reviewClock: { id: boolean; value: string };
+  reviewChange: { seq: string; organizationId: string; reviewId: string; before: import("@/lib/reviews/types").ReviewSnapshot | null; after: import("@/lib/reviews/types").ReviewSnapshot | null; createdAt: Generated<Date> };
+  reviewGc: { storagePath: string; notBefore: Date; leaseUntil: Date | null; leaseId: string | null; attempts: Generated<number> };
+  reviewRate: { userId: string; kind: string; window: string; count: number };
   account: AccountTable;
   blob: BlobTable;
   deviceCode: DeviceCodeTable;

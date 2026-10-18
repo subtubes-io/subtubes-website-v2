@@ -1,9 +1,13 @@
 # Desktop authentication integration
 
 The desktop app can authenticate and read the signed-in user's organizations.
-Report/design publishing, cloning, downloads, compatibility negotiation, image
-upload, limits, and synchronization APIs have been removed. Do not retry those
-retired endpoints; they return 404. There is no replacement content API yet.
+The old report/design endpoints remain retired. A separate backend-only
+[private reviews API](reviews-api-spec.md) provides organization-scoped push,
+revision history, reviewer sync and private downloads. Desktop integration is
+not implemented in this repository.
+
+For the report-sharing client workflow, see the
+[desktop reviews integration guide](desktop-reviews-integration.md).
 
 ## Device sign-in
 
