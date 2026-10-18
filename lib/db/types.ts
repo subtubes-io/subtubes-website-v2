@@ -9,6 +9,7 @@ export interface Database {
   member: MemberTable;
   organization: OrganizationTable;
   profileLinks: ProfileLinks & { userId: string };
+  pullRequestReport: PullRequestReportTable;
   session: SessionTable;
   user: UserTable;
   verification: VerificationTable;
@@ -102,6 +103,30 @@ interface VerificationTable {
   expiresAt: Date;
   createdAt: Generated<Date>;
   updatedAt: Generated<Date>;
+}
+
+interface PullRequestReportTable {
+  id: string;
+  organizationId: string;
+  createdBy: string;
+  createdAt: Date;
+  idempotencyKey: string;
+  bodySha256: string;
+  schemaVersion: number;
+  clientReportId: string;
+  sizeBytes: number;
+  title: string;
+  branch: string;
+  baseBranch: string;
+  startSha: string;
+  headSha: string;
+  commitCount: number;
+  fileCount: number;
+  additions: number;
+  deletions: number;
+  authors: string[];
+  repository: { name: string; remote: string | null } | null;
+  document: Record<string, unknown>;
 }
 
 interface BlobTable {
