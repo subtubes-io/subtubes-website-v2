@@ -1,13 +1,9 @@
 # Desktop authentication integration
 
 The desktop app can authenticate and read the signed-in user's organizations.
-The old report/design endpoints remain retired. A separate backend-only
-[private reviews API](reviews-api-spec.md) provides organization-scoped push,
-revision history, reviewer sync and private downloads. Desktop integration is
-not implemented in this repository.
-
-For the report-sharing client workflow, see the
-[desktop reviews integration guide](desktop-reviews-integration.md).
+Report, design, review, inbox, upload, and synchronization APIs are not
+available. Desktop integration is limited to authentication and organization
+discovery described here.
 
 ## Device sign-in
 

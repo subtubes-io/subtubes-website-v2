@@ -37,7 +37,7 @@ export default function SignInPage({ searchParams }: { searchParams: Search }) {
         <div className="auth-card">
           <p className="auth-kicker">Welcome back</p>
           <h1 className="auth-title">Sign in to Subtubes</h1>
-          <p className="auth-subtitle">Access your shared code reviews and team workspace.</p>
+          <p className="auth-subtitle">Access your account and team workspace.</p>
         <Suspense fallback={<p className="text-slate-600">Loading...</p>}>
           <SignIn searchParams={searchParams} />
         </Suspense>

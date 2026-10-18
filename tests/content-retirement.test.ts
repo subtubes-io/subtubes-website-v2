@@ -114,7 +114,12 @@ test("fresh and populated migrations preserve the foundation and cleanup fails s
     await cleanupRetiredContent(db, storage, async () => {});
     const result = await migrator.migrateToLatest();
     if (result.error) throw result.error;
-    for (const table of RETIRED_TABLES) {
+    for (const table of [
+      ...RETIRED_TABLES,
+      "review", "reviewRevision", "reviewReport", "reviewParticipant",
+      "reviewBlob", "reviewRevisionBlob", "reviewUpload", "reviewChange",
+      "reviewGc", "reviewRate", "reviewClock",
+    ]) {
       const present = await sql<{ name: string | null }>`SELECT to_regclass(${`"${table}"`})::text AS name`.execute(db);
       assert.equal(present.rows[0].name, null, `${table} must be removed`);
     }
@@ -143,6 +148,10 @@ test("fresh and populated migrations preserve the foundation and cleanup fails s
     const result = await freshMigrator.migrateToLatest();
     if (result.error) throw result.error;
     assert.equal((await sql<{ count: number }>`SELECT count(*)::int AS count FROM blob`.execute(freshDb)).rows[0].count, 0);
+    for (const table of ["review", "reviewRevision", "reviewReport", "reviewParticipant", "reviewBlob"]) {
+      const present = await sql<{ name: string | null }>`SELECT to_regclass(${`"${table}"`})::text AS name`.execute(freshDb);
+      assert.equal(present.rows[0].name, null, `${table} must not be present in a fresh database`);
+    }
   } finally {
     await freshDb.destroy();
     await freshAdmin.query(`DROP SCHEMA "${freshSchema}" CASCADE`);

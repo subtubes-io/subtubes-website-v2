@@ -5,13 +5,9 @@ Next.js (App Router), TypeScript, Tailwind CSS, PostgreSQL with Kysely, and
 organizations, memberships/invitations, profiles, and desktop device sign-in.
 Blob storage is retained for avatars and future application features.
 
-The backend also provides a [private reviews API](docs/reviews-api-spec.md) for
-organization-member uploads and synchronization. It tracks report organization
-and authenticated owner, immutable revisions, reviewer inbox/seen state, and
-private payloads. No desktop code or website review viewer is included.
-Configure `REVIEWS_BLOB_READ_WRITE_TOKEN` with a private store (not the avatar
-token), optional `REVIEWS_BUNDLES_ENABLED=true`, and `CRON_SECRET` for the hourly
-cleanup schedule. Verify real private-store upload/download policy before rollout.
+Report, design, review, inbox, upload, and synchronization APIs are not
+available. Organizations, authentication, desktop sign-in, and avatar storage
+remain supported.
 
 ## Local development
 
@@ -73,10 +69,9 @@ its legacy `REPORT_BLOB_READ_WRITE_TOKEN` configuration for cleanup and future
 reuse; it does not enable any product upload/sync endpoints. Never expose
 read-write tokens in browser/desktop code.
 
-The generic organization-scoped `blob` table remains available, without a
-generic upload API. Reports, snapshots, designs, design versions, and their
-upload-intent table are retired. Avatar files and unrelated private blobs must
-not be deleted.
+The generic organization-scoped `blob` table and both Blob stores remain
+available, without a generic upload API. Avatar files and unrelated private
+blobs are retained.
 
 ## Production deployment
 
