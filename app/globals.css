@@ -125,16 +125,23 @@ input:focus-visible {
 }
 
 .site-brand-mark {
-  display: grid;
+  display: block;
   width: 28px;
   height: 28px;
-  place-items: center;
   border-radius: 7px;
-  background: var(--foreground);
-  color: var(--background);
-  font-family: var(--font-code), monospace;
-  font-size: 17px;
-  font-weight: 700;
+}
+
+/* Dark theme (the default) shows the white mark on black; light shows the black mark. */
+.site-brand-mark-light {
+  display: none;
+}
+
+:root[data-theme="light"] .site-brand-mark-light {
+  display: block;
+}
+
+:root[data-theme="light"] .site-brand-mark-dark {
+  display: none;
 }
 
 .site-nav {

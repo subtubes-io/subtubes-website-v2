@@ -40,7 +40,11 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
   return (
     <header className="site-header" role="banner">
       <Link href="/" className="site-brand" aria-label="Subtubes home">
-        <span className="site-brand-mark" aria-hidden="true">S</span>
+        {/* Both marks are in the page; the theme chooses which shows, so there is no flash on load. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="site-brand-mark site-brand-mark-light" src="/subtubes-mark-black.svg" alt="" width={28} height={28} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img className="site-brand-mark site-brand-mark-dark" src="/subtubes-mark-on-black.svg" alt="" width={28} height={28} />
         <span>Subtubes</span>
       </Link>
       <nav className="site-nav" aria-label="Main navigation">
