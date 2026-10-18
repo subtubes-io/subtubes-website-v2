@@ -18,7 +18,7 @@ export function AcceptInvitation({ config }: { config: { invitationId: string; o
         try {
           const result = await authClient.organization.acceptInvitation({ invitationId: config.invitationId });
           if (result.error) throw new Error(result.error.message ?? "Could not accept the invitation.");
-          router.push(`/dashboard/organizations/${encodeURIComponent(config.organizationSlug)}`);
+          router.push(`/dashboard/organizations/${encodeURIComponent(config.organizationSlug)}/users`);
           router.refresh();
         } catch (error) {
           setError(error instanceof Error ? error.message : "Could not accept the invitation. Please try again.");

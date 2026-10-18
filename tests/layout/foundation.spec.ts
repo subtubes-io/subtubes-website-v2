@@ -29,7 +29,6 @@ test("retired content endpoints are unavailable", async ({ request }) => {
     "/api/v1/organizations/example/limits",
     "/api/organizations/example/reports/example/clone",
     "/api/blobs/example",
-    "/dashboard/organizations/example/reports",
     "/dashboard/organizations/example/reports/example",
   ]) {
     for (const method of ["GET", "POST", "PUT"]) {

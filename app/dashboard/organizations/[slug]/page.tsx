@@ -1,98 +1,30 @@
 import { Suspense } from "react";
-import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { SiteHeader } from "@/components/site-header";
-import { OrganizationTables } from "@/components/organization-tables";
 import { db } from "@/lib/db/client";
 import { getSession } from "@/lib/session";
 
-async function OrganizationDetails({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+// The organization's landing page is blank on purpose: the menu on the left leads to its pages.
+async function Overview({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const session = await getSession();
-  if (!session) {
-    redirect(
-      `/sign-in?next=${encodeURIComponent(`/dashboard/organizations/${slug}`)}`,
-    );
-  }
+  if (!session) redirect(`/sign-in?next=${encodeURIComponent(`/dashboard/organizations/${slug}`)}`);
 
   const organization = await db
     .selectFrom("organization")
     .innerJoin("member", "member.organizationId", "organization.id")
-    .select(["organization.id", "organization.name", "organization.slug", "member.role"])
+    .select("organization.name")
     .where("organization.slug", "=", slug)
     .where("member.userId", "=", session.user.id)
     .executeTakeFirst();
-
   if (!organization) notFound();
 
-  const canInvite = organization.role.split(",").some((role) => ["owner", "admin"].includes(role.trim()));
-  const [members, invitations] = await Promise.all([
-    db.selectFrom("member")
-      .innerJoin("user", "user.id", "member.userId")
-      .select(["member.id", "user.name", "user.email", "member.role"])
-      .where("member.organizationId", "=", organization.id)
-      .orderBy("member.createdAt", "asc")
-      .orderBy("member.id", "asc")
-      .execute(),
-    canInvite ? db.selectFrom("invitation")
-      .select(["id", "email", "role", "status", "expiresAt"])
-      .where("organizationId", "=", organization.id)
-      .orderBy("createdAt", "desc")
-      .orderBy("id", "asc")
-      .execute() : Promise.resolve([]),
-  ]);
-
-  return (
-    <>
-      <header className="dashboard-header">
-        <div>
-          <h1 className="dashboard-heading">{organization.name}</h1>
-        </div>
-        <Link href="/dashboard" className="button-secondary">
-          All organizations
-        </Link>
-      </header>
-
-      <section className="dashboard-section" aria-labelledby="organization-members-section">
-        <h2 id="organization-members-section" className="dashboard-section-title">
-          Organization Settings & Members
-        </h2>
-        <OrganizationTables config={{
-          organizationId: organization.id,
-          canInvite,
-          members,
-          invitations: invitations.map((invitation) => ({
-            ...invitation,
-            role: invitation.role ?? "member",
-            expiresAt: invitation.expiresAt.toISOString(),
-            status: invitation.status === "pending" && invitation.expiresAt <= new Date()
-              ? "expired" : invitation.status,
-          })),
-        }} />
-      </section>
-    </>
-  );
+  return <h1 className="sr-only">{organization.name}</h1>;
 }
 
-export default function OrganizationPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
+export default function OrganizationPage({ params }: { params: Promise<{ slug: string }> }) {
   return (
-    <main className="site-main">
-      <SiteHeader />
-      <section className="dashboard-wrap">
-        <Suspense
-          fallback={<p className="dashboard-empty">Loading organization...</p>}
-        >
-          <OrganizationDetails params={params} />
-        </Suspense>
-      </section>
-    </main>
+    <Suspense fallback={null}>
+      <Overview params={params} />
+    </Suspense>
   );
 }

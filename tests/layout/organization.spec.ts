@@ -60,8 +60,8 @@ for (const width of [1440, 390]) {
   test(`organization workspace at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await signIn(page.request, ownerEmail);
-    await page.goto(`/dashboard/organizations/${slug}`);
-    await expect(page.getByRole("heading", { name: "Example workspace", exact: true })).toBeVisible();
+    await page.goto(`/dashboard/organizations/${slug}/users`);
+    await expect(page.getByRole("heading", { name: "Users", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Account menu for Workspace owner" })).toBeVisible();
     await page.evaluate(() => document.fonts.ready);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
@@ -76,7 +76,7 @@ test("member tables and invitation lifecycle stay organization-scoped", async ({
   await signIn(page.request, ownerEmail);
   const activeOrganization = await page.request.post("/api/auth/organization/set-active", { data: { organizationId: otherId } });
   expect(activeOrganization.ok(), await activeOrganization.text()).toBeTruthy();
-  await page.goto(`/dashboard/organizations/${slug}`);
+  await page.goto(`/dashboard/organizations/${slug}/users`);
   const members = page.getByRole("table", { name: "Members", exact: true });
   const invitations = page.getByRole("table", { name: "Invitations", exact: true });
   await expect(members).toContainText("Workspace owner");
@@ -127,7 +127,7 @@ test("member tables and invitation lifecycle stay organization-scoped", async ({
     await recipient.goto(href!);
     await expect(recipient.getByRole("heading", { name: "Join Example workspace" })).toBeVisible();
     await recipient.getByRole("button", { name: "Accept invitation", exact: true }).click();
-    await expect(recipient).toHaveURL(`/dashboard/organizations/${slug}`);
+    await expect(recipient).toHaveURL(`/dashboard/organizations/${slug}/users`);
     await expect(recipient.getByRole("table", { name: "Members", exact: true })).toContainText("Invitation recipient");
     const replay = await recipient.request.post("/api/auth/organization/accept-invitation", { data: { invitationId } });
     expect(replay.ok()).toBeFalsy();
@@ -156,7 +156,7 @@ test("member tables and invitation lifecycle stay organization-scoped", async ({
   });
   expect(canceledAcceptance.ok()).toBeFalsy();
   await signIn(page.request, ownerEmail);
-  await page.goto(`/dashboard/organizations/${slug}-other`);
+  await page.goto(`/dashboard/organizations/${slug}-other/users`);
   await expect(page.getByRole("table", { name: "Invitations", exact: true })).toContainText("No invitations yet.");
   await expect(page.getByRole("table", { name: "Members", exact: true })).not.toContainText("Example member");
 });
@@ -166,7 +166,7 @@ test("members cannot manage invitations, outsiders cannot view organizations, er
   await page.goto("/dashboard");
   const organizations = page.getByRole("table", { name: "Organizations", exact: true });
   await expect(organizations.getByRole("row").filter({ hasText: "Example workspace" }).getByRole("cell").last()).toHaveText("-");
-  await page.goto(`/dashboard/organizations/${slug}`);
+  await page.goto(`/dashboard/organizations/${slug}/users`);
   await expect(page.getByRole("table", { name: "Members", exact: true })).toBeVisible();
   await expect(page.getByRole("table", { name: "Invitations", exact: true })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Create invitation" })).toHaveCount(0);
@@ -179,10 +179,10 @@ test("members cannot manage invitations, outsiders cannot view organizations, er
   await expect(organizations).toContainText("Outside user's Workspace");
   await expect(organizations).not.toContainText("Example workspace");
   await expect(page.getByRole("textbox", { name: "Organization name" })).toBeVisible();
-  await page.goto(`/dashboard/organizations/${slug}`);
-  await expect(page.getByRole("heading", { name: "Example workspace" })).toHaveCount(0);
+  await page.goto(`/dashboard/organizations/${slug}/users`);
+  await expect(page.getByRole("heading", { name: "Users" })).toHaveCount(0);
   await signIn(page.request, ownerEmail);
-  await page.goto(`/dashboard/organizations/${slug}`);
+  await page.goto(`/dashboard/organizations/${slug}/users`);
   await page.getByLabel("Invite email").fill(memberEmail);
   await page.getByRole("button", { name: "Create invitation", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: /already a member/i })).toBeVisible();

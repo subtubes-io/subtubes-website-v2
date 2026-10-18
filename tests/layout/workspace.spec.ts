@@ -25,8 +25,11 @@ async function expectFluidLayout(page: Page, width: number) {
       right: Number.parseFloat(style.paddingRight),
     };
   });
-  expect(layout.x).toBe(0);
-  expect(layout.width).toBe(width);
+  // An organization's pages have the menu drawer beside the page (over it on a phone), so the page starts where the drawer ends.
+  const drawer = page.getByRole("complementary", { name: "Organization" });
+  const offset = width > 720 && (await drawer.count()) > 0 && (await drawer.isVisible()) ? (await drawer.boundingBox())!.width : 0;
+  expect(layout.x).toBe(offset);
+  expect(layout.width).toBe(width - offset);
   const gutter = width <= 520 ? 18 : Math.min(56, Math.max(20, width * 0.04));
   expect(layout.left).toBeCloseTo(gutter);
   expect(layout.right).toBeCloseTo(gutter);
@@ -34,7 +37,7 @@ async function expectFluidLayout(page: Page, width: number) {
   const heading = await page.locator(".dashboard-heading").boundingBox();
   expect(brand).not.toBeNull();
   expect(heading).not.toBeNull();
-  expect(heading!.x).toBeCloseTo(brand!.x);
+  if (offset === 0) expect(heading!.x).toBeCloseTo(brand!.x);
 }
 
 test.beforeAll(async ({ request }) => {
@@ -75,11 +78,11 @@ for (const width of [390, 1440, 1920]) {
       });
       expect(signin.ok(), await signin.text()).toBeTruthy();
       await page.goto(
-        route === "dashboard" ? "/dashboard" : `/dashboard/organizations/${slug}`,
+        route === "dashboard" ? "/dashboard" : `/dashboard/organizations/${slug}/users`,
       );
       await expect(
         page.getByRole("heading", {
-          name: route === "dashboard" ? "Dashboard" : "Example workspace",
+          name: route === "dashboard" ? "Dashboard" : "Users",
           exact: true,
         }),
       ).toBeVisible();
@@ -101,8 +104,10 @@ for (const width of [390, 1440, 1920]) {
         const tableBounds = await table.boundingBox();
         expect(form!.y + form!.height).toBeLessThan(tableBounds!.y);
       } else {
-        await expect(page.getByRole("link", { name: "All organizations" }))
-          .toHaveAttribute("href", "/dashboard");
+        // On a phone the menu starts closed (the menu test below covers it open).
+        if (width > 720) {
+          await expect(page.getByRole("link", { name: "All organizations" })).toHaveAttribute("href", "/dashboard");
+        }
         await expect(page.getByRole("table", { name: "Members", exact: true })).toBeVisible();
         await expect(page.getByRole("heading", { name: "Reports", exact: true })).toHaveCount(0);
       }
@@ -163,7 +168,7 @@ for (const width of [390, 1440]) {
     }
     for (const [route, name] of [
       ["/dashboard", "Dashboard"],
-      [`/dashboard/organizations/${slug}`, "Example workspace"],
+      [`/dashboard/organizations/${slug}/users`, "Users"],
       ["/dashboard/account", "Account"],
       ["/dashboard/profile", "Profile"],
       ["/sign-in", "Sign in to Subtubes"],
@@ -179,7 +184,7 @@ for (const width of [390, 1440]) {
       await expect(root).toHaveAttribute("data-theme", "light");
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await page.evaluate(() => document.fonts.ready);
-      const state = route === "/" ? "home" : route === `/dashboard/organizations/${slug}` ? "organization" : route.split("/").pop()!;
+      const state = route === "/" ? "home" : route === `/dashboard/organizations/${slug}/users` ? "organization" : route.split("/").pop()!;
       const path = testInfo.outputPath(`${state}-light.png`);
       await page.screenshot({ path, fullPage: true, animations: "disabled" });
       await testInfo.attach(`${state}-light`, { path, contentType: "image/png" });
@@ -343,5 +348,51 @@ for (const width of [390, 1440]) {
     await expect(page).toHaveURL(/\/sign-in\?next=/);
     await page.goto("/dashboard/profile");
     await expect(page).toHaveURL(/\/sign-in\?next=/);
+  });
+}
+
+for (const width of [390, 1440]) {
+  test(`organization menu at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    const signin = await page.request.post("/api/auth/sign-in/email", { data: { email, password } });
+    expect(signin.ok(), await signin.text()).toBeTruthy();
+    const base = `/dashboard/organizations/${slug}`;
+    await page.goto(base);
+    // The landing page is blank: no table, no section, only the menu to go on from.
+    await expect(page.locator("main .dashboard-wrap").locator("table, section, h2")).toHaveCount(0);
+
+    const drawer = page.getByRole("complementary", { name: "Organization" });
+    const toggle = page.getByRole("button", { name: /^(Close|Open) the menu$/ });
+    // A phone starts with the menu closed; a larger screen starts with it open.
+    if (width <= 720) {
+      await expect(drawer).toBeHidden();
+      await toggle.click();
+    }
+    await expect(drawer).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+    await drawer.getByRole("link", { name: "Reports" }).click();
+    await expect(page).toHaveURL(`${base}/reports`);
+    await expect(page.getByRole("heading", { name: "Reports", exact: true })).toBeVisible();
+    await expect(drawer.getByRole("link", { name: "Reports" })).toHaveAttribute("aria-current", "page");
+    await expect(page.getByRole("table", { name: "Published reports" })).toBeVisible();
+
+    await drawer.getByRole("link", { name: "Users" }).click();
+    await expect(page).toHaveURL(`${base}/users`);
+    await expect(page.getByRole("table", { name: "Members", exact: true })).toBeVisible();
+    await expect(drawer.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+    await expect(drawer.getByRole("link", { name: "Reports" })).not.toHaveAttribute("aria-current", "page");
+
+    // Closing it collapses it to the left, and the choice is remembered on the next visit.
+    await page.getByRole("button", { name: "Close the menu" }).click();
+    await expect(drawer).toBeHidden();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await page.reload();
+    await expect(drawer).toBeHidden();
+    await page.getByRole("button", { name: "Open the menu" }).click();
+    await expect(drawer).toBeVisible();
+    await expect(drawer.getByRole("link", { name: "All organizations" })).toHaveAttribute("href", "/dashboard");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   });
 }

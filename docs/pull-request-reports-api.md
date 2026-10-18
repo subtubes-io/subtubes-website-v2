@@ -49,6 +49,15 @@ so a list never opens a document. The id is `rpt_` and 12 random characters. `cr
 - **Who sees what:** every member reads every report. The publisher shows as `{ id, name, image }`, never an email address.
 - **Paging:** newest first by `createdAt`, then `id`; the cursor is opaque.
 
+## Managing reports on the website
+
+`/dashboard/organizations/{slug}/reports` (linked from the organization page) lists the organization's reports newest first, up to 100: title,
+branch, size of the change, who published it, when, and the size of the document. It is for managing, not reading: there is no way to open a
+report there. A member sees every report and can delete their own; an owner or admin can delete any, after a confirmation.
+
+The delete is `DELETE /api/organizations/{organizationId}/pull-request-reports/{reportId}` with the browser session (cookie), which also needs
+the website's own origin. It is the same deletion as the bearer API's, with the same rules and answers.
+
 ## Tests
 
 `npm test` runs `tests/pull-request-validation.test.ts` (no server needed) and `tests/pull-request-reports-api.test.ts` (needs `npm run dev` and
