@@ -37,6 +37,13 @@ Do not infer deployed review support from working device login alone.
 4. Fetch `/api/v1/reviews/limits?organizationId=<id>` before preparing uploads.
    Respect advertised byte/count limits and enabled transports. Bundle transport
    is disabled unless the server advertises it.
+   Numeric examples in desktop documents are illustrative: use the limits the
+   server returns, including the five-minute upload URL lifetime.
+
+Populate the reviewer picker from
+`GET /api/v1/organizations/:organizationId/members`, following its opaque cursor
+until hasMore is false. Display name/username; email is not returned. The client
+may hide itself, but self-assignment is not forbidden by the backend.
 
 Use native/Rust HTTP for review requests. These endpoints do not enable
 cross-origin WebView fetch. Configure the desktop's networking permissions
@@ -81,7 +88,7 @@ envelope and reuse that UUID for retries. A closed review reopens on author push
 |---|---|
 | API 401 | Stop authenticated work and require sign-in; do not treat it as empty data. |
 | API 403 | Show the permission or disabled-capability error; do not retry blindly. |
-| API 404 | Resource is missing or inaccessible. Refresh membership and reconcile local state. |
+| API 404 | Resource is missing or inaccessible. Refresh membership and reconcile local state. Unknown API paths also return JSON 404; use `/limits` capability discovery rather than assuming every JSON 404 proves review support. |
 | 409 `blobs_missing` | Inspect `details.missing`, upload missing payloads, then complete again. Renew expired intents through the same push. |
 | 409 `blob_conflict` | Check digest/size/type claims against the exact bytes. Do not silently replace them. |
 | 409 `review_merged` | Require an explicit new review cycle, not an automatic endless retry. |
@@ -113,8 +120,14 @@ Keep signed URLs transient and redact them from diagnostics.
    never a JavaScript Number.
 6. Follow `hasMore` even when `items` is empty. After the last page, retain its
    cursor for the next poll. Use a bounded polling interval/backoff.
-7. On invalid cursor HTTP 400, discard that query's cursor and rebuild its
+7. On `invalid_cursor` HTTP 400, discard that query's cursor and rebuild its
    filtered view from a fresh replay; surface repeated failures.
+
+Detail and PATCH responses include a nested `review`; detail retains top-level
+metadata too. Specific-revision reads include both `revision` and
+`latestRevision` for that requested revision. History lists all complete
+revisions with createdAt; unseen reviewer state is null. These are confirmed
+wire shapes, not inferred client defaults.
 
 Refresh `/api/v1/me` periodically and after access errors. When membership
 ends, stop that organization's queued work and clear its local records,

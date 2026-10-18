@@ -5,7 +5,10 @@ export async function GET(request: Request, context: Context) {
   return handle(request, async (user) => response(await reviews.get(user, (await context.params).reviewId)));
 }
 export async function PATCH(request: Request, context: Context) {
-  return handle(request, async (user) => response(await reviews.patch(user, (await context.params).reviewId, await readJson(request))));
+  return handle(request, async (user) => {
+    const review = await reviews.patch(user, (await context.params).reviewId, await readJson(request));
+    return response({ ...review, review });
+  });
 }
 export async function DELETE(request: Request, context: Context) {
   return handle(request, async (user) => response(await reviews.remove(user, (await context.params).reviewId), 202));

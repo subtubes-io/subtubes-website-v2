@@ -298,12 +298,55 @@ export class Reviews {
       ? await this.db.selectFrom("reviewRevision").selectAll().where("id", "=", review.latestRevisionId ?? "").where("state", "=", "complete").executeTakeFirst()
       : await this.db.selectFrom("reviewRevision").selectAll().where("reviewId", "=", review.id).where("number", "=", number).where("state", "=", "complete").executeTakeFirst();
     if (number !== undefined && !revision) throw notFound();
-    const history = await this.db.selectFrom("reviewRevision").select(["id", "number", "completedAt"])
-      .where("reviewId", "=", review.id).where("state", "=", "complete").orderBy("number", "desc").limit(100).execute();
+    const history = await this.db.selectFrom("reviewRevision").select(["id", "number", "createdAt", "completedAt"])
+      .where("reviewId", "=", review.id).where("state", "=", "complete").orderBy("number", "desc").execute();
     const reports = revision ? await this.db.selectFrom("reviewReport").selectAll().where("revisionId", "=", revision.id).execute() : [];
     const reviewers = await this.db.selectFrom("reviewParticipant").select(["userId", "lastSeenRevision"]).where("reviewId", "=", review.id).execute();
     await this.membership(this.db, user.id, review.organizationId);
-    return { ...review, latestRevision: revision ?? null, history, reports, reviewers };
+    return { ...review, review, latestRevision: revision ?? null,
+      ...(number === undefined ? {} : { revision }), history, reports,
+      reviewers: reviewers.map((participant) => ({
+        ...participant, lastSeenRevision: participant.lastSeenRevision || null,
+      })) };
+  }
+
+  async members(user: ReviewUser, organizationId: string, params: URLSearchParams) {
+    await this.membership(this.db, user.id, organizationId);
+    const limit = params.get("limit") ?? "100";
+    if (!/^[1-9][0-9]*$/.test(limit) || Number(limit) > 200) {
+      throw new ReviewError(400, "invalid_request", "Member limit must be between 1 and 200.");
+    }
+    let boundary: { name: string; userId: string } | undefined;
+    if (params.has("after")) {
+      try {
+        const encoded = params.get("after")!;
+        if (!encoded || encoded.length > 8192) throw new Error("Invalid cursor");
+        const cursor = z.object({
+          version: z.literal(1), userId: z.literal(user.id), organizationId: z.literal(organizationId),
+          name: z.string(), memberUserId: idSchema,
+        }).parse(JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")));
+        boundary = { name: cursor.name, userId: cursor.memberUserId };
+      } catch { throw new ReviewError(400, "invalid_cursor", "Cursor does not match this user and organization."); }
+    }
+    let query = this.db.selectFrom("member as m").innerJoin("user as u", "u.id", "m.userId")
+      .select(["u.id as userId", "u.name", "u.username", "u.image", "m.role"])
+      .where("m.organizationId", "=", organizationId);
+    if (boundary) {
+      const { name, userId } = boundary;
+      query = query.where((e) => e.or([e("u.name", ">", name),
+        e.and([e("u.name", "=", name), e("u.id", ">", userId)])]));
+    }
+    const rows = await query.orderBy("u.name").orderBy("u.id").limit(Number(limit) + 1).execute();
+    await this.membership(this.db, user.id, organizationId);
+    const hasMore = rows.length > Number(limit);
+    const members = rows.slice(0, Number(limit)).map((member) => ({
+      ...member, role: member.role.split(",").map((role) => role.trim()).includes("owner") ? "owner"
+        : this.admin(member.role) ? "admin" : "member",
+    }));
+    const last = members[members.length - 1];
+    return { members, hasMore, nextCursor: hasMore ? Buffer.from(JSON.stringify({
+      version: 1, userId: user.id, organizationId, name: last.name, memberUserId: last.userId,
+    })).toString("base64url") : null };
   }
 
   async patch(user: ReviewUser, reviewId: string, value: unknown) {
@@ -380,7 +423,7 @@ export class Reviews {
     const scope = { userId: user.id, role, status, organizationId: org };
     let after = "0";
     let upper: string | undefined;
-    if (params.get("after")) {
+    if (params.has("after")) {
       try {
         const encoded = params.get("after")!;
         if (encoded.length > 2048) throw new Error("Invalid cursor");
@@ -390,12 +433,12 @@ export class Reviews {
         if (JSON.stringify(cursor.scope) !== JSON.stringify(scope) || !sequence(cursor.after) ||
           (cursor.upper !== undefined && !sequence(cursor.upper))) throw new Error("Invalid cursor");
         after = cursor.after; upper = cursor.upper;
-      } catch { throw new ReviewError(400, "invalid_request", "Cursor does not match this user and query."); }
+      } catch { throw new ReviewError(400, "invalid_cursor", "Cursor does not match this user and query."); }
     }
     const clock = await this.db.selectFrom("reviewClock").select("value").where("id", "=", true).executeTakeFirstOrThrow();
     upper ??= clock.value;
     if (BigInt(after) > BigInt(upper) || BigInt(upper) > BigInt(clock.value)) {
-      throw new ReviewError(400, "invalid_request", "Cursor sequence is invalid.");
+      throw new ReviewError(400, "invalid_cursor", "Cursor sequence is invalid.");
     }
     let query = this.db.selectFrom("reviewChange as event")
       .selectAll("event").where("event.seq", ">", after).where("event.seq", "<=", upper)

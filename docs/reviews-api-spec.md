@@ -49,6 +49,35 @@ assignment, or a former owner/admin role never grants access to an organization.
 
 Reviewers must be members when added. Their participant rows reference the
 membership and cascade when membership ends, producing sync events.
+An invalid reviewer assignment returns 404, not 400, without identifying
+whether that user exists. Self-assignment remains supported by the backend;
+the desktop may hide the author in its picker as a client policy.
+
+### Organization member directory
+
+`GET /api/v1/organizations/:organizationId/members?limit=100&after=...`
+
+Uses the same Bearer-only authentication and current-membership requirement.
+Nonmembers and unknown organizations return JSON 404. Responses are no-store,
+contain no emails, and include the caller:
+
+```json
+{
+  "members": [
+    { "userId": "user-id", "name": "Example", "username": null, "image": null, "role": "member" }
+  ],
+  "nextCursor": null,
+  "hasMore": false
+}
+```
+
+Limit defaults to 100, accepts 1–200. Results use database name ordering then
+user ID, with keyset cursors bound to the requester and organization. Roles are
+owner/admin/member (highest role when membership contains multiple roles).
+Malformed or wrong-scope cursors return 400 `invalid_cursor`. Follow nextCursor
+while hasMore; concurrent directory changes may require a fresh replay. Returned
+userId values are the IDs accepted by reviewerUserIds, subject to membership
+still being valid at assignment time.
 
 ## Authentication and transport
 
@@ -269,22 +298,31 @@ or merge. Storage/provider work is outside database transactions.
 ### Read/history and ownership
 
 - `GET /api/v1/reviews/:reviewId`: persisted review fields, `latestRevision`
-  (including validated manifest, or null), up to 100 complete history entries,
+  (including validated manifest, or null), all complete history entries,
   latest revision's `reports` database records (including organization/owner),
   and assigned `reviewers` with lastSeenRevision.
 - `GET /api/v1/reviews/:reviewId/revisions/:revisionNumber`: same response
-  envelope with the requested complete revision and its report records.
+  envelope with the requested complete revision and its report records. Also
+  returns that revision under `revision`.
 - `GET /api/v1/reviews/:reviewId/blobs/:hash`: 307 to a short-lived private URL,
   only if that org/hash is verified and referenced by a complete revision of
   that review. Pending/abandoned-only blobs are not downloadable.
 - `PUT /api/v1/reviews/:reviewId/seen` with `{"revision":1}`: assigned reviewers
   only, actual complete revision required; seen state advances monotonically.
 
+Detail responses also include a nested `review` containing persisted review
+fields; top-level review fields remain for backwards compatibility. History
+entries contain id, number, createdAt and completedAt, ordered newest first.
+`reviewers` contains userId and lastSeenRevision; unseen is null in the response
+(stored as zero internally). Seen returns `{"seen":1}` with the stored maximum.
+
 ### Metadata and deletion
 
 `PATCH /api/v1/reviews/:reviewId` accepts title, status, addReviewerUserIds and
 removeReviewerUserIds. Author edits title/reviewers; author or org owner/admin
 changes status. Status is open/closed/merged; merged sets mergedAt and is terminal.
+PATCH returns `{"review":{...}}` plus the same persisted fields at the top level
+for backwards compatibility.
 
 `DELETE /api/v1/reviews/:reviewId` returns 202
 `{"deleted":true,"storageCleanup":"queued"}`. Database deletion is immediate;
@@ -317,6 +355,10 @@ reviewer produces a removal for the old inbox filter. Membership removal also
 requires clearing that organization's local data using refreshed `/api/v1/me`;
 do not expect revoked org data/tombstones from the API. Adding membership allows
 a fresh replay for that org.
+Damaged, empty, wrong-user/query, or out-of-range cursors return HTTP 400 with
+`error:"invalid_cursor"`. Invalid filters remain `invalid_request`.
+Sequences are signed PostgreSQL bigint decimal strings, not JS numbers; examples
+larger than 9223372036854775807 are not server-emittable values.
 
 ### Usage
 
@@ -363,11 +405,17 @@ Rollback refuses populated reviews/blob/cleanup data.
 ## Errors, logging and deployment validation
 
 API errors: `{"error":"code","message":"human text","details":{}}`.
+Details are optional. Unknown paths under `/api/v1/` return JSON 404
+`{"error":"not_found","message":"No such endpoint."}` for supported HTTP verbs,
+without cookies, CORS, or cacheability. HEAD has no body by HTTP semantics.
+Next.js-generated method-not-allowed responses and platform-level failures may
+have different bodies; clients should tolerate these separately.
 Codes include invalid_request/invalid_manifest (400), unauthorized (401),
 forbidden/bundle_disabled (403), not_found (404), review_merged/blob_conflict/
 blobs_missing (409), revision_expired (410), too_large/quota_exceeded (413),
 unsupported_media_type (415), rate_limited (429), storage_unavailable/
 retry_transaction (503), and internal_error (500).
+`invalid_cursor` is HTTP 400.
 
 Do not log raw bodies, SQL/provider errors, session tokens, signing material, or
 signed URLs. Unexpected failures log only a correlation ID and sanitized

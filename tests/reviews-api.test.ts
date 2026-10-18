@@ -123,6 +123,28 @@ test("private reviews database contract", {
         () => api.list(outsider, new URLSearchParams({ organizationId: "org-a", role: "all" })),
       ]) await assert.rejects(action(), (e: unknown) => e instanceof ReviewError && e.status === 404);
     });
+    await t.test("member directory is private, stable on tied names and scoped to caller/org", async () => {
+      await db.updateTable("user").set({ name: "Same name" }).where("id", "in", [owner.id, reviewer.id]).execute();
+      let after: string | null = null;
+      const users: string[] = [];
+      let cursor = "";
+      do {
+        const page = await api.members(owner, "org-a", new URLSearchParams({ limit: "1", ...(after ? { after } : {}) }));
+        assert.ok(page.members.every((member) => !("email" in member)));
+        users.push(...page.members.map((member) => member.userId));
+        after = page.nextCursor;
+        cursor ||= after ?? "";
+        assert.equal(page.hasMore, after !== null);
+      } while (after);
+      assert.deepEqual(users, [orgAdmin.id, owner.id, reviewer.id]);
+      assert.equal((await api.members(owner, "org-a", new URLSearchParams())).members.length, 3);
+      await assert.rejects(api.members(outsider, "org-a", new URLSearchParams()), (e: unknown) => e instanceof ReviewError && e.status === 404);
+      await assert.rejects(api.members(reviewer, "org-a", new URLSearchParams({ after: cursor })),
+        (e: unknown) => e instanceof ReviewError && e.code === "invalid_cursor");
+      await assert.rejects(api.members(owner, "org-a", new URLSearchParams({ after: "invalid" })),
+        (e: unknown) => e instanceof ReviewError && e.code === "invalid_cursor");
+      await assert.rejects(api.members(owner, "org-a", new URLSearchParams({ limit: "201" })), ReviewError);
+    });
     await t.test("concurrent retries create one revision and persist report organization/owner", async () => {
       const results = await Promise.all([1, 2].map(() => api.push(owner, {
         organizationId: "org-a", manifest: manifest(), reviewerUserIds: [reviewer.id],
@@ -282,7 +304,7 @@ test("private reviews database contract", {
       for (const after of ["9223372036854775808", "99999999999999999999999999999999", 1]) {
         await assert.rejects(api.list(reviewer, new URLSearchParams({
           after: Buffer.from(JSON.stringify({ ...cursor, after })).toString("base64url"),
-        })), (e: unknown) => e instanceof ReviewError && e.status === 400);
+        })), (e: unknown) => e instanceof ReviewError && e.code === "invalid_cursor");
       }
       await api.patch(owner, reviewId, { addReviewerUserIds: [reviewer.id] });
       await db.deleteFrom("member").where("id", "=", "org-a-reviewer").execute();
@@ -299,6 +321,24 @@ test("private reviews database contract", {
         ...manifest(" pending"), reports: [{ ...manifest().reports[0], blobs: { report: { hash: "f".repeat(64), bytes: bytes.length } } }],
       } });
       assert.equal(retry.body.revision.id, pending.body.revision.id);
+    });
+    await t.test("detail includes nested review, complete history beyond 100 and unseen null", async () => {
+      const cycle = randomUUID();
+      let reviewId = "";
+      for (let index = 0; index < 101; index++) {
+        const pushed = await api.push(owner, { organizationId: "org-a", cycle,
+          manifest: manifest(` history ${index}`), reviewerUserIds: [orgAdmin.id] });
+        reviewId = pushed.body.review.id;
+      }
+      const detail = await api.get(owner, reviewId);
+      assert.equal(detail.review.id, detail.id);
+      assert.equal(detail.history.length, 101);
+      assert.ok(detail.history.every((revision) => revision.createdAt instanceof Date));
+      assert.equal(detail.reviewers[0].lastSeenRevision, null);
+      const older = await api.get(owner, reviewId, 1);
+      assert.equal(older.revision?.number, 1);
+      assert.equal(older.latestRevision?.number, 1);
+      await api.remove(owner, reviewId);
     });
     await t.test("former author cannot upload or complete; reports survive account deletion", async () => {
       await db.deleteFrom("member").where("id", "=", "org-a-author").execute();

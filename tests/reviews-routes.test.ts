@@ -43,6 +43,28 @@ test("live Next routes enforce Bearer/member boundaries and expose report organi
       method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }), redirect: "manual",
     });
+    for (const method of ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]) {
+      const missing = await fetch(`${base}/api/v1/nope/deeper`, { method });
+      assert.equal(missing.status, 404);
+      assert.deepEqual(await missing.json(), { error: "not_found", message: "No such endpoint." });
+      assert.equal(missing.headers.get("cache-control"), "no-store");
+    }
+    const directory = await fetch(`${base}/api/v1/organizations/${orgId}/members`, {
+      headers: { authorization: `Bearer ${author.token}` },
+    });
+    assert.equal(directory.status, 200);
+    assert.equal(directory.headers.get("cache-control"), "no-store");
+    const members = await directory.json();
+    assert.equal(members.members[0].userId, author.id);
+    assert.equal(members.members[0].email, undefined);
+    assert.equal(members.nextCursor, null);
+    for (const headers of [new Headers({ cookie: author.cookie }), new Headers({ authorization: `Bearer ${outsider.token}` })]) {
+      const result = await fetch(`${base}/api/v1/organizations/${orgId}/members`, { headers });
+      assert.equal(result.status, headers.has("cookie") ? 401 : 404);
+    }
+    const damagedCursor = await request(`?organizationId=${orgId}&after=broken`);
+    assert.equal(damagedCursor.status, 400);
+    assert.equal((await damagedCursor.json()).error, "invalid_cursor");
     for (const path of ["", "/limits", `/usage?organizationId=${orgId}`, "/missing", "/missing/revisions/1", `/missing/blobs/${hash}`]) {
       const denied = await fetch(`${base}/api/v1/reviews${path}`, { headers: { cookie: author.cookie } });
       assert.equal(denied.status, 401);
@@ -79,6 +101,10 @@ test("live Next routes enforce Bearer/member boundaries and expose report organi
     const read = await request(`/${reviewId}/revisions/1`);
     assert.equal(read.status, 200);
     const data = await read.json();
+    assert.equal(data.review.id, reviewId);
+    assert.equal(data.revision.number, 1);
+    assert.equal(data.reviewers[0].lastSeenRevision, null);
+    assert.ok(data.history[0].createdAt);
     assert.equal(data.reports[0].organizationId, orgId);
     assert.equal(data.reports[0].ownerId, author.id);
     assert.equal((await request(`/${reviewId}/revisions/not-a-number`)).status, 400);
@@ -88,7 +114,11 @@ test("live Next routes enforce Bearer/member boundaries and expose report organi
     assert.equal((await request(`/${reviewId}/seen`, "PUT", { revision: 1 })).status, 200);
     const initial = await (await request(`?organizationId=${orgId}&role=all&status=all`)).json();
     assert.ok(initial.items.some((item: { id: string }) => item.id === reviewId));
-    assert.equal((await request(`/${reviewId}`, "PATCH", { title: "Updated" })).status, 200);
+    const changed = await request(`/${reviewId}`, "PATCH", { title: "Updated" });
+    assert.equal(changed.status, 200);
+    const updated = await changed.json();
+    assert.equal(updated.review.title, "Updated");
+    assert.equal(updated.title, "Updated");
     assert.equal((await request(`/${reviewId}`, "DELETE")).status, 202);
     const removed = await (await request(`?organizationId=${orgId}&role=all&status=all&after=${initial.nextCursor}`)).json();
     assert.ok(removed.items.some((item: { id: string; removed: boolean }) => item.id === reviewId && item.removed));
