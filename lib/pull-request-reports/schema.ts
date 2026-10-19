@@ -1,11 +1,14 @@
 import { z } from "zod";
+import { REPOSITORY_KEY_PATTERN, repositoryKey } from "./repository-key";
 
 // The pull-request report document and the publish request, as the desktop app defines them
 // (Subtubes desktop: src/pullRequests/bundle.ts, src/components/diagram/schema.ts, shared/scenarioSchema.ts and
 // src/pullRequests/remote/contract.ts). Every object is strict: a key that is not listed is refused, never ignored.
 // A released document version is frozen; a new version adds a schema here and its number to ACCEPTED_SCHEMA_VERSIONS.
 
-export const ACCEPTED_SCHEMA_VERSIONS = [2];
+// A report holds no code (version 3): its files are listed with their status and counts, and the diffs are read from each person's own copy of
+// the repository. Version 2 carried them; the website no longer takes it, but still returns what it stored.
+export const ACCEPTED_SCHEMA_VERSIONS = [3];
 
 export const LIMITS = {
   // The whole request body, as sent. Vercel Functions refuse a body over 4.5 MB before any code runs.
@@ -13,7 +16,6 @@ export const LIMITS = {
   // The app's own limits, enforced here too because the app's checks are not trusted.
   maxCommits: 100,
   maxFiles: 300,
-  maxHeadBytes: 400_000,
   maxPathLength: 4096,
   // Deepest JSON nesting accepted anywhere in the body (scenario conditions are the only recursive part).
   maxDepth: 64,
@@ -29,7 +31,6 @@ const severity = z.enum(["high", "medium", "low"]);
 const count = z.number().int().nonnegative();
 const stat = { additions: count, deletions: count };
 const titledText = z.strictObject({ title: z.string(), body: z.string() });
-const utf8Bytes = (text: string) => Buffer.byteLength(text, "utf8");
 
 // ---- the design: a diagram and its scenarios ----
 
@@ -173,7 +174,7 @@ export const scenarioSchema = z
     }
   });
 
-// ---- the report document, version 2 ----
+// ---- the report document, version 3 ----
 
 const commitReport = z.strictObject({
   id,
@@ -181,12 +182,6 @@ const commitReport = z.strictObject({
   title: z.string(),
   features: z.array(titledText),
   issues: z.array(z.strictObject({ severity, title: z.string(), body: z.string() })),
-});
-
-const hunk = z.strictObject({
-  oldStart: count,
-  newStart: count,
-  rows: z.array(z.strictObject({ kind: z.enum(["context", "added", "removed"]), text: z.string() })),
 });
 
 const discussionComment = z.strictObject({
@@ -202,7 +197,7 @@ const discussionComment = z.strictObject({
 
 export const bundleSchema = z
   .strictObject({
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     kind: z.literal(BUNDLE_KIND),
     exportedAt: iso,
     report: z.strictObject({
@@ -239,19 +234,7 @@ export const bundleSchema = z
       .min(1)
       .max(LIMITS.maxCommits),
     files: z
-      .array(
-        z.strictObject({
-          path: z.string().min(1).max(LIMITS.maxPathLength),
-          status: fileStatus,
-          ...stat,
-          language: z.string(),
-          hunks: z.array(hunk),
-          head: z
-            .string()
-            .nullable()
-            .refine((text) => text === null || utf8Bytes(text) <= LIMITS.maxHeadBytes, `A file's text may not be over ${LIMITS.maxHeadBytes} bytes`),
-        }),
-      )
+      .array(z.strictObject({ path: z.string().min(1).max(LIMITS.maxPathLength), status: fileStatus, ...stat, language: z.string() }))
       .max(LIMITS.maxFiles),
     commitReports: z.array(commitReport),
     design: z.strictObject({
@@ -294,25 +277,29 @@ export type Bundle = z.infer<typeof bundleSchema>;
 
 // ---- the publish request ----
 
-// The git remote as the app sends it: with credentials already removed. The website removes any that remain (see sanitizeRemote).
+// The git remote as the app sends it: the project's remote, with credentials already removed. The website removes any that remain (see
+// sanitizeRemote) and works out the repository key from it; a remote that has no key is refused.
 const remoteUrl = z
   .string()
   .max(500)
-  .refine(
-    (value) =>
-      (/^(https?|ssh|git):\/\/[^\s/?#]+/i.test(value) && !/\s/.test(value) && URL.canParse(value)) || /^[\w.-]+@[\w.-]+:[^\s]+$/.test(value),
-    "Is not a git remote address",
-  );
+  .refine((value) => repositoryKey(value) !== null, "Is not the address of a git repository");
 
 export const repositorySchema = z.strictObject({
   name: z.string().min(1).max(200),
-  remote: remoteUrl.nullable(),
+  remote: remoteUrl,
 });
 
 export const publishRequestSchema = z.strictObject({
   bundle: bundleSchema,
-  repository: repositorySchema.optional(),
+  repository: repositorySchema,
+});
+
+// POST .../move: file the reports of one repository under another (the project's remote changed).
+export const moveRequestSchema = z.strictObject({
+  from: z.string().max(300).regex(REPOSITORY_KEY_PATTERN),
+  to: repositorySchema,
 });
 
 export type PublishRequest = z.infer<typeof publishRequestSchema>;
+export type MoveRequest = z.infer<typeof moveRequestSchema>;
 export type Repository = z.infer<typeof repositorySchema>;

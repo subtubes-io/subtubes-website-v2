@@ -5,6 +5,8 @@ import { db } from "@/lib/db/client";
 import { ApiError } from "./errors";
 import { ID_PATTERN } from "./http";
 import { sanitizeRemote } from "./remote";
+import { REPOSITORY_KEY_PATTERN, repositoryKey } from "./repository-key";
+import type { MoveRequest } from "./schema";
 import type { ValidatedPublish } from "./validate";
 
 export const DEFAULT_PAGE_SIZE = 20;
@@ -26,6 +28,7 @@ const SUMMARY_COLUMNS = [
   "pullRequestReport.schemaVersion",
   "pullRequestReport.clientReportId",
   "pullRequestReport.repository",
+  "pullRequestReport.repositoryKey",
   "pullRequestReport.sizeBytes",
   "pullRequestReport.createdAt",
   "pullRequestReport.createdBy",
@@ -57,6 +60,7 @@ export function toSummary(row: SummaryRow) {
     schemaVersion: row.schemaVersion,
     clientReportId: row.clientReportId,
     repository: row.repository,
+    repositoryKey: row.repositoryKey,
     sizeBytes: row.sizeBytes,
     createdAt: row.createdAt.toISOString(),
     createdBy: { id: row.createdBy, name: row.publisherName, image: row.publisherImage },
@@ -73,7 +77,12 @@ export async function publishReport(input: {
 }): Promise<{ created: boolean; report: ReportSummary }> {
   const { organizationId, userId, idempotencyKey, validated } = input;
   const { bundle, repository } = validated.request;
-  const stored = repository ? { name: repository.name, remote: sanitizeRemote(repository.remote) } : null;
+  // The repository is the project's remote as the website keeps it: no credentials, and the key that identifies it. A remote that has none was
+  // refused by the validation, so this cannot be null.
+  const remote = sanitizeRemote(repository.remote);
+  const key = remote ? repositoryKey(remote) : null;
+  if (!remote || !key) throw new ApiError("invalid-report", "The repository is not the address of a git repository.", { issues: [{ path: "repository.remote", message: "Is not the address of a git repository" }] });
+  const stored = { name: repository.name, remote };
   const id = `rpt_${randomBytes(9).toString("base64url")}`;
 
   const inserted = await db
@@ -100,7 +109,8 @@ export async function publishReport(input: {
       additions: bundle.summary.additions,
       deletions: bundle.summary.deletions,
       authors: sql<string[]>`${JSON.stringify(bundle.summary.authors)}::jsonb`,
-      repository: stored ? sql<{ name: string; remote: string | null }>`${JSON.stringify(stored)}::jsonb` : null,
+      repository: sql<{ name: string; remote: string | null }>`${JSON.stringify(stored)}::jsonb`,
+      repositoryKey: key,
       document: sql<Record<string, unknown>>`${JSON.stringify(bundle)}::jsonb`,
     })
     .onConflict((conflict) => conflict.columns(["organizationId", "createdBy", "idempotencyKey"]).doNothing())
@@ -139,6 +149,7 @@ const listQuery = z.strictObject({
   cursor: z.string().min(1).max(500).optional(),
   branch: z.string().min(1).max(300).optional(),
   createdBy: idParam.optional(),
+  repository: z.string().max(300).regex(REPOSITORY_KEY_PATTERN).optional(),
 });
 const cursorBody = z.strictObject({ t: z.iso.datetime(), i: idParam });
 
@@ -169,6 +180,7 @@ export async function listReports(organizationId: string, query: ReturnType<type
   let select = summaries().where("pullRequestReport.organizationId", "=", organizationId);
   if (query.branch) select = select.where("pullRequestReport.branch", "=", query.branch);
   if (query.createdBy) select = select.where("pullRequestReport.createdBy", "=", query.createdBy);
+  if (query.repository) select = select.where("pullRequestReport.repositoryKey", "=", query.repository);
   if (query.cursor) {
     const { t, i } = decodeCursor(query.cursor);
     const at = new Date(t);
@@ -225,4 +237,27 @@ export async function deleteReport(organizationId: string, reportId: string, cal
     .where("id", "=", reportId)
     .executeTakeFirst();
   if (deleted.numDeletedRows === BigInt(0)) throw new ApiError("report-not-found", "No such report in this organization.");
+}
+
+// ---- move ----
+
+// Files the reports of one repository under another, in one statement: the project's remote changed. Only the repository fields change, never the
+// document. A report the caller may not change (not theirs, and they are not an owner or admin) is left where it is and counted.
+export async function moveReports(organizationId: string, request: MoveRequest, caller: { userId: string; canManage: boolean }) {
+  const remote = sanitizeRemote(request.to.remote);
+  const key = remote ? repositoryKey(remote) : null;
+  if (!remote || !key) throw new ApiError("invalid-report", "The new repository is not the address of a git repository.");
+  const stored = JSON.stringify({ name: request.to.name, remote });
+
+  const matching = db.selectFrom("pullRequestReport").where("organizationId", "=", organizationId).where("repositoryKey", "=", request.from);
+  const total = await matching.select((eb) => eb.fn.countAll<string>().as("n")).executeTakeFirstOrThrow();
+  let allowed = matching;
+  if (!caller.canManage) allowed = allowed.where("createdBy", "=", caller.userId);
+  const moved = await db
+    .updateTable("pullRequestReport")
+    .set({ repositoryKey: key, repository: sql<{ name: string; remote: string | null }>`${stored}::jsonb` })
+    .where("id", "in", allowed.select("id"))
+    .executeTakeFirst();
+  const count = Number(moved.numUpdatedRows);
+  return { moved: count, skipped: Math.max(0, Number(total.n) - count) };
 }

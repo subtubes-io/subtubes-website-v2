@@ -47,10 +47,11 @@ const collection = (organizationId: string) => `${baseUrl}/api/v1/organizations/
 const bearer = (person: Person) => ({ Authorization: `Bearer ${person.token}` });
 
 // A document that differs from the fixture only in what makes it a different report.
-function document(reportId: string, branch = fixture.bundle.branch.name): Json {
+function document(reportId: string, branch = fixture.bundle.branch.name, remote = fixture.repository.remote): Json {
   const request = structuredClone(fixture);
   request.bundle.report.id = reportId;
   request.bundle.branch.name = branch;
+  request.repository = { name: fixture.repository.name, remote };
   return request;
 }
 
@@ -119,15 +120,16 @@ test("publishes a report: 201, with the summary taken from the document and the 
   assert.notEqual(report.id, "pr_publish_one");
   assert.deepEqual(Object.keys(report).sort(), [
     "additions", "authors", "baseBranch", "branch", "clientReportId", "commitCount", "createdAt", "createdBy", "deletions", "fileCount",
-    "headSha", "id", "organizationId", "repository", "schemaVersion", "sizeBytes", "startSha", "title",
+    "headSha", "id", "organizationId", "repository", "repositoryKey", "schemaVersion", "sizeBytes", "startSha", "title",
   ]);
   assert.equal(report.organizationId, team);
   assert.equal(report.clientReportId, "pr_publish_one");
   assert.equal(report.title, fixture.bundle.report.title);
   assert.equal(report.headSha, fixture.bundle.branch.range.headSha);
   assert.equal(report.fileCount, fixture.bundle.files.length);
-  assert.equal(report.schemaVersion, 2);
+  assert.equal(report.schemaVersion, 3);
   assert.deepEqual(report.repository, fixture.repository);
+  assert.equal(report.repositoryKey, "github.com/acme/payments");
   assert.deepEqual(Object.keys(report.createdBy).sort(), ["id", "image", "name"]);
   assert.equal(report.createdBy.id, alice.id);
   assert.ok(Date.parse(report.createdAt) >= before - 1000 && Date.parse(report.createdAt) <= Date.now() + 1000);
@@ -189,10 +191,15 @@ test("refuses a request that is not shaped right, with the contract's codes", as
   const invalid = await expectError(await publish(alice, team, bad), 422, "invalid-report");
   assert.ok(invalid.details.issues.some((i: Json) => i.path === "bundle.files.0.status"));
 
+  const noRepository = document("pr_no_repository");
+  delete noRepository.repository;
+  const missing = await expectError(await publish(alice, team, noRepository), 422, "invalid-report");
+  assert.ok(missing.details.issues.some((i: Json) => i.path === "repository"));
+
   const old = document("pr_old");
-  old.bundle.schemaVersion = 1;
+  old.bundle.schemaVersion = 2;
   const unsupported = await expectError(await publish(alice, team, old), 422, "unsupported-schema-version");
-  assert.deepEqual(unsupported.details, { supported: [2] });
+  assert.deepEqual(unsupported.details, { supported: [3] });
 
   const huge = await expectError(await publish(alice, team, "x".repeat(4_300_000), "pr_huge"), 413, "payload-too-large");
   assert.deepEqual(huge.details, { limitBytes: 4_250_000 });
@@ -211,6 +218,7 @@ test("credentials in the git remote are dropped before it is stored or shown", a
   request.repository.remote = "https://user:secret@github.com/acme/payments.git?token=abc";
   const { report } = await (await publish(alice, team, request)).json();
   assert.equal(report.repository.remote, "https://github.com/acme/payments.git");
+  assert.equal(report.repositoryKey, "github.com/acme/payments");
   const { rows } = await pool.query(`SELECT repository, document FROM "pullRequestReport" WHERE id = $1`, [report.id]);
   assert.ok(!JSON.stringify(rows[0].repository).includes("secret"));
 });
@@ -328,4 +336,82 @@ test("deleting the organization or the account deletes its reports", async () =>
   await pool.query(`DELETE FROM "user" WHERE id = $1`, [dave.id]);
   const { rows } = await pool.query(`SELECT 1 FROM "pullRequestReport" WHERE id = $1`, [report.id]);
   assert.equal(rows.length, 0);
+});
+
+test("files a report under its repository, whichever way the remote is written, and lists one repository's reports only", async () => {
+  const org = await teamOrganization([{ person: alice, role: "member" }, { person: bob, role: "member" }]);
+  const made: Record<string, string> = {};
+  for (const [id, remote] of [
+    ["pr_k1", "https://github.com/Acme/Payments.git"],
+    ["pr_k2", "git@github.com:acme/payments.git"],
+    ["pr_k3", "https://github.com/acme/ledger.git"],
+    ["pr_k4", "https://gitlab.com/acme/payments.git"],
+  ] as const) {
+    const response = await publish(alice, org, document(id, "main", remote));
+    assert.equal(response.status, 201, id);
+    const { report } = await response.json();
+    made[id] = report.id;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const list = async (query: string) => (await (await get(bob, `${collection(org)}${query}`)).json()).reports.map((r: Json) => r.id);
+  assert.deepEqual(await list("?repository=github.com%2Facme%2Fpayments"), [made.pr_k2, made.pr_k1]);
+  assert.deepEqual(await list("?repository=github.com%2Facme%2Fledger"), [made.pr_k3]);
+  assert.deepEqual(await list("?repository=gitlab.com%2Facme%2Fpayments"), [made.pr_k4]);
+  assert.deepEqual(await list("?repository=github.com%2Facme%2Fnothing"), []);
+  assert.equal((await list("")).length, 4);
+  // A repository filter combines with the others.
+  assert.deepEqual(await list(`?repository=github.com%2Facme%2Fpayments&createdBy=${bob.id}`), []);
+  for (const bad of ["", "github.com", "GitHub.com%2FAcme%2FPayments", "https%3A%2F%2Fgithub.com%2Facme%2Fpayments", "github.com%2Facme%2Fpay%20ments"]) {
+    const response = await get(bob, `${collection(org)}?repository=${bad}`);
+    assert.equal(response.status, 400, bad);
+  }
+  // Someone in another organization never sees them, whatever repository they ask for.
+  assert.equal((await get(carol, `${collection(org)}?repository=github.com%2Facme%2Fpayments`)).status, 404);
+});
+
+const move = (person: Person, organizationId: string, body: unknown) =>
+  fetch(`${collection(organizationId)}/move`, { method: "POST", headers: { ...bearer(person), "Content-Type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) });
+
+test("moves reports to another repository: the publisher's own, or all of them for an owner or admin, and says how many it could not", async () => {
+  const org = await teamOrganization([{ person: alice, role: "member" }, { person: bob, role: "member" }, { person: carol, role: "admin" }]);
+  const old = "https://github.com/acme/payments.git";
+  const renamed = { name: "acme-co/payments", remote: "https://user:secret@github.com/acme-co/payments.git" };
+  for (const [person, id] of [[alice, "pr_m1"], [alice, "pr_m2"], [bob, "pr_m3"]] as const) assert.equal((await publish(person, org, document(id, "main", old))).status, 201);
+  const keys = async () => (await (await get(carol, collection(org))).json()).reports.map((r: Json) => `${r.clientReportId}:${r.repositoryKey}`).sort();
+
+  // A member moves their own and skips the one that is not theirs.
+  const first = await move(alice, org, { from: "github.com/acme/payments", to: renamed });
+  assert.equal(first.status, 200);
+  assert.equal(first.headers.get("cache-control"), "no-store");
+  assert.deepEqual(await first.json(), { moved: 2, skipped: 1 });
+  assert.deepEqual(await keys(), ["pr_m1:github.com/acme-co/payments", "pr_m2:github.com/acme-co/payments", "pr_m3:github.com/acme/payments"]);
+  // Credentials in the new remote are dropped, and the document is untouched.
+  const stored = await pool.query(`SELECT repository, document->'report'->>'id' AS id FROM "pullRequestReport" WHERE "clientReportId" = 'pr_m1'`);
+  assert.deepEqual(stored.rows[0].repository, { name: "acme-co/payments", remote: "https://github.com/acme-co/payments.git" });
+  assert.equal(stored.rows[0].id, "pr_m1");
+
+  // Moving again finds nothing under the old repository.
+  assert.deepEqual(await (await move(alice, org, { from: "github.com/acme/payments", to: renamed })).json(), { moved: 0, skipped: 1 });
+
+  // An admin moves what is left, whoever published it.
+  assert.deepEqual(await (await move(carol, org, { from: "github.com/acme/payments", to: renamed })).json(), { moved: 1, skipped: 0 });
+  assert.deepEqual(await keys(), ["pr_m1:github.com/acme-co/payments", "pr_m2:github.com/acme-co/payments", "pr_m3:github.com/acme-co/payments"]);
+  assert.deepEqual(await (await move(alice, org, { from: "github.com/nothing/here", to: renamed })).json(), { moved: 0, skipped: 0 });
+});
+
+test("a move is checked like everything else: who, what, and how big", async () => {
+  const error = async (response: Response, status: number, code: string) => {
+    assert.equal(response.status, status);
+    assert.equal((await response.json()).error, code);
+  };
+  const to = { name: "x/y", remote: "https://github.com/x/y.git" };
+  await error(await fetch(`${collection(team)}/move`, { method: "POST", body: "{}" }), 401, "unauthorized");
+  await error(await move(carol, alice.personalOrganizationId, { from: "github.com/a/b", to }), 404, "organization-not-found");
+  await error(await fetch(`${collection(team)}/move`, { method: "POST", headers: { ...bearer(alice), "Content-Type": "text/plain" }, body: "{}" }), 415, "unsupported-media-type");
+  await error(await move(alice, team, "{not json"), 400, "bad-request");
+  for (const body of [{}, { from: "github.com/a/b" }, { from: "https://github.com/a/b", to }, { from: "github.com/a/b", to: { name: "x", remote: "nonsense" } }, { from: "github.com/a/b", to, extra: 1 }, { from: "github.com/a/b", to: { ...to, extra: 1 } }]) {
+    await error(await move(alice, team, body), 422, "invalid-report");
+  }
+  await error(await move(alice, team, { from: "github.com/a/b", to, pad: "x".repeat(5000) }), 413, "payload-too-large");
+  assert.equal((await fetch(`${collection(team)}/move`, { headers: bearer(alice) })).status, 405);
 });

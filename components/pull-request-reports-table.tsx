@@ -10,6 +10,7 @@ export type ManagedReport = {
   id: string;
   title: string;
   branch: string;
+  repository: string;
   commitCount: number;
   fileCount: number;
   additions: number;
@@ -64,6 +65,7 @@ export function PullRequestReportsTable({ config }: { config: ReportsTableConfig
         caption: "Published reports",
         columns: [
           { id: "title", header: "Report", cell: (report) => report.title || "Untitled report" },
+          { id: "repository", header: "Repository", cell: (report) => report.repository ? <code>{report.repository}</code> : "None" },
           { id: "branch", header: "Branch", cell: (report) => <code>{report.branch}</code> },
           { id: "changes", header: "Changes", cell: (report) => `${report.commitCount} commit${report.commitCount === 1 ? "" : "s"} · ${report.fileCount} file${report.fileCount === 1 ? "" : "s"} · +${report.additions} −${report.deletions}` },
           { id: "publisher", header: "Published by", cell: (report) => report.publisher },

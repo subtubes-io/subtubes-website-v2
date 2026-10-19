@@ -126,6 +126,7 @@ interface PullRequestReportTable {
   deletions: number;
   authors: string[];
   repository: { name: string; remote: string | null } | null;
+  repositoryKey: string | null;
   document: Record<string, unknown>;
 }
 

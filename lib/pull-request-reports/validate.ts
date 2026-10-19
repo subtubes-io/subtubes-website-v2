@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { ApiError } from "./errors";
-import { ACCEPTED_SCHEMA_VERSIONS, LIMITS, publishRequestSchema, type PublishRequest } from "./schema";
+import { ACCEPTED_SCHEMA_VERSIONS, LIMITS, moveRequestSchema, publishRequestSchema, type MoveRequest, type PublishRequest } from "./schema";
 
 export interface ValidatedPublish {
   request: PublishRequest;
@@ -97,4 +97,25 @@ function badText(text: string): string | null {
   if (text.includes("\u0000")) return "Contains a null character";
   if (!text.isWellFormed()) return "Contains text that is not valid Unicode";
   return null;
+}
+
+const MAX_MOVE_BODY = 4096;
+
+// A move names two repositories and nothing else, so its body is small: read, checked and refused as a publish is.
+export function validateMoveBody(body: Uint8Array): MoveRequest {
+  if (body.byteLength > MAX_MOVE_BODY) throw new ApiError("payload-too-large", "That request is too large.", { limitBytes: MAX_MOVE_BODY });
+  let raw: unknown;
+  try {
+    raw = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(body));
+  } catch {
+    throw new ApiError("bad-request", "The body is not valid JSON.");
+  }
+  const unsafe = findUnsafeValue(raw);
+  if (unsafe) throw new ApiError("invalid-report", "The request cannot be used.", { issues: [unsafe] });
+  const parsed = moveRequestSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.slice(0, MAX_ISSUES).map((issue) => ({ path: issue.path.map(String).join("."), message: issue.message.slice(0, MAX_MESSAGE) }));
+    throw new ApiError("invalid-report", "The request does not match the format.", { issues });
+  }
+  return parsed.data;
 }

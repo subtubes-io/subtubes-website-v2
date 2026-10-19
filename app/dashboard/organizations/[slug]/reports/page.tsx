@@ -46,6 +46,7 @@ async function Reports({ params }: { params: Promise<{ slug: string }> }) {
             id: report.id,
             title: report.title,
             branch: report.branch,
+            repository: report.repositoryKey ?? "",
             commitCount: report.commitCount,
             fileCount: report.fileCount,
             additions: report.additions,

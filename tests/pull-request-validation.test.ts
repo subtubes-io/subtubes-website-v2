@@ -62,11 +62,11 @@ test("refuses a missing or wrongly typed field", () => {
   invalid((r) => { r.bundle.files[0].status = "renamed"; }, "bundle.files.0.status");
   invalid((r) => { r.bundle.files[0].additions = -1; }, "bundle.files.0.additions");
   invalid((r) => { r.bundle.files[0].additions = 1.5; }, "bundle.files.0.additions");
-  invalid((r) => { r.bundle.files[0].head = 7; }, "bundle.files.0.head");
-  invalid((r) => { r.bundle.files[0].hunks[0].rows[0].kind = "moved"; }, "bundle.files.0.hunks.0.rows.0.kind");
   invalid((r) => { r.bundle.discussion = [{ role: "system", text: "", comments: [] }]; }, "bundle.discussion.0.role");
   invalid((r) => { r.bundle.discussion = [{ role: "user", text: "", comments: [{ path: "a", lines: { start: 0, end: 1, side: "new" }, excerpt: "", body: "" }] }]; }, "bundle.discussion.0.comments.0.lines.start");
-  invalid((r) => { r.repository = { name: "", remote: null }; }, "repository.name");
+  invalid((r) => { r.repository = { name: "", remote: fixture.repository.remote }; }, "repository.name");
+  invalid((r) => { r.repository.remote = null; }, "repository.remote");
+  invalid((r) => { delete r.repository; }, "repository");
   invalid((r) => { r.repository.name = "x".repeat(201); }, "repository.name");
 });
 
@@ -101,23 +101,28 @@ test("checks the document agrees with itself", () => {
 });
 
 test("enforces the app's own limits", () => {
-  invalid((r) => { r.bundle.files[0].head = "a".repeat(LIMITS.maxHeadBytes + 1); }, "bundle.files.0.head");
   invalid((r) => { r.bundle.files[0].path = "a".repeat(LIMITS.maxPathLength + 1); }, "bundle.files.0.path");
   assert.equal(refusal({ ...fresh(), bundle: { ...fresh().bundle, files: Array.from({ length: LIMITS.maxFiles + 1 }, () => fresh().bundle.files[0]) } }).code, "invalid-report");
-  // The limit is in bytes, not characters.
-  invalid((r) => { r.bundle.files[0].head = "é".repeat(LIMITS.maxHeadBytes / 2 + 1); }, "bundle.files.0.head");
+});
+
+test("takes no code in the document: a file is listed, and carrying its text or its changes is refused", () => {
+  invalid((r) => { r.bundle.files[0].head = "export const secret = 1;\n"; }, "bundle.files.0");
+  invalid((r) => { r.bundle.files[0].hunks = []; }, "bundle.files.0");
+  invalid((r) => { r.bundle.files[0].patch = "@@ -1 +1 @@\n+x\n"; }, "bundle.files.0");
+  // The example the desktop app publishes is a few kilobytes of write-up, whatever the files held.
+  assert.ok(encode(fixture).byteLength < 100_000);
 });
 
 test("says which versions it accepts when the document is not one of them", () => {
-  for (const schemaVersion of [1, 3, 99]) {
+  for (const schemaVersion of [1, 2, 4, 99]) {
     const request = fresh();
     request.bundle.schemaVersion = schemaVersion;
     const error = refusal(request);
     assert.equal(error.code, "unsupported-schema-version");
-    assert.deepEqual(error.details, { supported: [2] });
+    assert.deepEqual(error.details, { supported: [3] });
   }
   const request = fresh();
-  request.bundle.schemaVersion = "2";
+  request.bundle.schemaVersion = "3";
   assert.equal(refusal(request).code, "invalid-report");
 });
 
@@ -158,14 +163,13 @@ test("takes a git remote only as an address, and drops credentials from it", () 
   for (const remote of ["javascript:alert(1)", "file:///etc/passwd", "not a remote", "https://", "ftp://example.com/a.git", "x".repeat(501)]) {
     invalid((r) => { r.repository.remote = remote; }, "repository.remote");
   }
-  for (const remote of ["https://github.com/acme/payments.git", "git@github.com:acme/payments.git", "ssh://git@host/acme/p.git", null]) {
+  for (const remote of ["https://github.com/acme/payments.git", "git@github.com:acme/payments.git", "ssh://git@host/acme/p.git"]) {
     const request = fresh();
     request.repository.remote = remote;
     assert.doesNotThrow(() => validatePublishBody(encode(request)), String(remote));
   }
-  const noRepository = fresh();
-  delete noRepository.repository;
-  assert.doesNotThrow(() => validatePublishBody(encode(noRepository)));
+  // The remote is how the report is filed: without one that names a repository there is nowhere to file it.
+  invalid((r) => { r.repository.remote = "https://github.com/acme"; }, "repository.remote");
 
   assert.equal(sanitizeRemote("https://user:secret@github.com/acme/p.git"), "https://github.com/acme/p.git");
   assert.equal(sanitizeRemote("https://ghp_token@github.com/acme/p.git"), "https://github.com/acme/p.git");
