@@ -48,6 +48,14 @@ const diagramEdge = z.strictObject({
   id, from: id, to: id, label: z.string(), dashed: z.boolean().optional(), optional: z.boolean().optional(),
 });
 
+// Version 2 of a diagram: a node, group or edge may have its own colour, and a layer is optional. A colour is a preset name
+// (it follows the app's light or dark theme) or a fixed #rrggbb: the same two forms as the desktop app's shared/colors.ts.
+export const COLOR_PRESETS = ["red", "orange", "yellow", "green", "teal", "blue", "purple", "pink", "gray"] as const;
+const color = z.union([z.enum(COLOR_PRESETS), z.string().regex(/^#[0-9a-fA-F]{6}$/)]);
+const diagramGroupV2 = diagramGroup.extend({ layer: layer.optional(), color: color.optional() });
+const diagramNodeV2 = diagramNode.extend({ layer: layer.optional(), color: color.optional() });
+const diagramEdgeV2 = diagramEdge.extend({ color: color.optional() });
+
 function duplicates(ids: string[]) {
   const seen = new Set<string>();
   const repeated = new Set<string>();
@@ -58,7 +66,26 @@ function duplicates(ids: string[]) {
   return [...repeated];
 }
 
-export const diagramSchema = z
+type DiagramParts = { groups: { id: string }[]; nodes: { id: string }[]; edges: { id: string; from: string; to: string }[] };
+
+function checkDiagram(diagram: DiagramParts, ctx: z.RefinementCtx) {
+  for (const key of ["groups", "nodes", "edges"] as const) {
+    for (const repeated of duplicates(diagram[key].map((item) => item.id))) {
+      ctx.addIssue({ code: "custom", path: [key], message: `Duplicate ${key} id "${repeated}"` });
+    }
+  }
+  const nodeIds = new Set(diagram.nodes.map((node) => node.id));
+  diagram.edges.forEach((edge, index) => {
+    for (const end of ["from", "to"] as const) {
+      if (!nodeIds.has(edge[end])) {
+        ctx.addIssue({ code: "custom", path: ["edges", index, end], message: `Edge "${edge.id}" references unknown node "${edge[end]}"` });
+      }
+    }
+  });
+}
+
+// A diagram carries its own version. Version 1 is frozen; a report may hold either, since a person's older reports keep theirs.
+const diagramV1 = z
   .strictObject({
     schemaVersion: z.literal(1),
     name: z.string().min(1),
@@ -67,21 +94,20 @@ export const diagramSchema = z
     nodes: z.array(diagramNode),
     edges: z.array(diagramEdge),
   })
-  .superRefine((diagram, ctx) => {
-    for (const key of ["groups", "nodes", "edges"] as const) {
-      for (const repeated of duplicates(diagram[key].map((item) => item.id))) {
-        ctx.addIssue({ code: "custom", path: [key], message: `Duplicate ${key} id "${repeated}"` });
-      }
-    }
-    const nodeIds = new Set(diagram.nodes.map((node) => node.id));
-    diagram.edges.forEach((edge, index) => {
-      for (const end of ["from", "to"] as const) {
-        if (!nodeIds.has(edge[end])) {
-          ctx.addIssue({ code: "custom", path: ["edges", index, end], message: `Edge "${edge.id}" references unknown node "${edge[end]}"` });
-        }
-      }
-    });
-  });
+  .superRefine(checkDiagram);
+
+const diagramV2 = z
+  .strictObject({
+    schemaVersion: z.literal(2),
+    name: z.string().min(1),
+    description: z.string().optional(),
+    groups: z.array(diagramGroupV2),
+    nodes: z.array(diagramNodeV2),
+    edges: z.array(diagramEdgeV2),
+  })
+  .superRefine(checkDiagram);
+
+export const diagramSchema = z.discriminatedUnion("schemaVersion", [diagramV1, diagramV2]);
 
 const primitive = z.union([z.string(), z.number(), z.boolean()]);
 const valuePath = z.string().regex(/^(input|state)\.[\w]+$/, "Use input.<name> or state.<name>");

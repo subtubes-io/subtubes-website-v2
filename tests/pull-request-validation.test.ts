@@ -72,7 +72,7 @@ test("refuses a missing or wrongly typed field", () => {
 
 test("checks the diagram and scenarios the document carries, not just that they are objects", () => {
   invalid((r) => { r.bundle.design.diagram = {}; }, "bundle.design.diagram");
-  invalid((r) => { r.bundle.design.diagram.schemaVersion = 2; }, "bundle.design.diagram.schemaVersion");
+  invalid((r) => { r.bundle.design.diagram.schemaVersion = 3; }, "bundle.design.diagram.schemaVersion");
   invalid((r) => { r.bundle.design.diagram.nodes[0].layer = "cloud"; }, "bundle.design.diagram.nodes.0.layer");
   invalid((r) => { r.bundle.design.diagram.nodes[0].w = 0; }, "bundle.design.diagram.nodes.0.w");
   invalid((r) => { r.bundle.design.diagram.nodes[0].x = "1"; }, "bundle.design.diagram.nodes.0.x");
@@ -87,6 +87,40 @@ test("checks the diagram and scenarios the document carries, not just that they 
   assert.doesNotThrow(() => validatePublishBody(encode(orphaned)));
   invalid((r) => { r.bundle.design.scenarios.push(structuredClone(r.bundle.design.scenarios[0])); }, "bundle.design.scenarios");
   invalid((r) => { r.bundle.design.headSha = "0".repeat(40); }, "bundle.design.headSha");
+});
+
+// Diagram version 2 (desktop 'diagram.v2'): a node, group or edge may have a colour, and a layer is optional. The fixture, which is
+// what the desktop app publishes, carries one. A version 1 diagram is what older apps and older reports hold.
+const asV1 = (request: Json) => {
+  const diagram = request.bundle.design.diagram;
+  diagram.schemaVersion = 1;
+  for (const item of [...diagram.nodes, ...diagram.groups, ...diagram.edges]) delete item.color;
+  return diagram;
+};
+
+test("accepts a version 2 diagram: colours as presets or #rrggbb on nodes, groups and edges, and no layer", () => {
+  assert.equal(fixture.bundle.design.diagram.schemaVersion, 2);
+  const request = fresh();
+  const diagram = request.bundle.design.diagram;
+  diagram.nodes[0].color = "teal";
+  diagram.nodes[1].color = "#0EA5e9";
+  delete diagram.nodes[1].layer;
+  diagram.edges[0].color = "red";
+  diagram.groups.push({ id: "g", title: "G", x: 0, y: 0, w: 10, h: 10, color: "gray" });
+  assert.doesNotThrow(() => validatePublishBody(encode(request)));
+  const request1 = fresh();
+  asV1(request1);
+  assert.doesNotThrow(() => validatePublishBody(encode(request1)));
+});
+
+test("refuses a colour that is not a preset or #rrggbb, and a colour in a version 1 diagram", () => {
+  for (const bad of ["chartreuse", "#fff", "#12345g", "red; background:url(x)", "rgb(1,2,3)", "", "Red", 7]) {
+    invalid((r) => { r.bundle.design.diagram.nodes[0].color = bad; }, "bundle.design.diagram.nodes.0.color");
+    invalid((r) => { r.bundle.design.diagram.edges[0].color = bad; }, "bundle.design.diagram.edges.0.color");
+  }
+  invalid((r) => { r.bundle.design.diagram.groups.push({ id: "g", title: "G", x: 0, y: 0, w: 10, h: 10, color: "nope" }); }, "bundle.design.diagram.groups.0.color");
+  invalid((r) => { asV1(r).nodes[0].color = "red"; }, "bundle.design.diagram.nodes.0");
+  invalid((r) => { r.bundle.design.diagram.nodes[0].extra = 1; }, "bundle.design.diagram.nodes.0");
 });
 
 test("checks the document agrees with itself", () => {

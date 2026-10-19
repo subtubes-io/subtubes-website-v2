@@ -293,7 +293,7 @@
       "revision": 4,
       "headSha": "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0",
       "diagram": {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "name": "Checkout flow (sample)",
         "description": "How an order moves from the cart to a confirmed payment.",
         "groups": [],
@@ -306,7 +306,8 @@
             "y": 30,
             "w": 280,
             "h": 150,
-            "body": "- Shows items and totals\n- Starts checkout"
+            "body": "- Shows items and totals\n- Starts checkout",
+            "color": "blue"
           },
           {
             "id": "pay-form",
@@ -316,7 +317,8 @@
             "y": 210,
             "w": 280,
             "h": 150,
-            "body": "- Collects card details\n- Never stores them"
+            "body": "- Collects card details\n- Never stores them",
+            "color": "blue"
           },
           {
             "id": "orders-api",
@@ -326,7 +328,8 @@
             "y": 30,
             "w": 280,
             "h": 150,
-            "body": "- Creates the order\n- Calls the payment service"
+            "body": "- Creates the order\n- Calls the payment service",
+            "color": "purple"
           },
           {
             "id": "pricing",
@@ -336,7 +339,8 @@
             "y": 30,
             "w": 280,
             "h": 150,
-            "body": "- Discounts and tax\n- Pure functions"
+            "body": "- Discounts and tax\n- Pure functions",
+            "color": "orange"
           },
           {
             "id": "payments",
@@ -346,7 +350,8 @@
             "y": 210,
             "w": 280,
             "h": 150,
-            "body": "Third-party processor. Calls are **idempotent** per order."
+            "body": "Third-party processor. Calls are **idempotent** per order.",
+            "color": "orange"
           },
           {
             "id": "orders-db",
@@ -356,7 +361,8 @@
             "y": 30,
             "w": 280,
             "h": 150,
-            "body": "- One row per order\n- Status: pending, paid, failed"
+            "body": "- One row per order\n- Status: pending, paid, failed",
+            "color": "green"
           }
         ],
         "edges": [

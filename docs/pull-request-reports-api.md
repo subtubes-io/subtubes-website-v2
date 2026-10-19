@@ -30,7 +30,10 @@ Nothing is read from the body before step 4. Rate limiting is not implemented ye
 - A `bundle.schemaVersion` that is not accepted (today `3`) is `422 unsupported-schema-version` with `details.supported`.
 - Every object is strict: a key the format does not list, at any depth, is refused. Every field is checked for type, enum, pattern and range,
   including the **diagram** and each **scenario** in `bundle.design`, which are checked against the app's own diagram and scenario formats
-  (unique ids, edges between existing nodes, a scenario's start and branches pointing at existing steps).
+  (unique ids, edges between existing nodes, a scenario's start and branches pointing at existing steps). A diagram carries its own
+  `schemaVersion`; versions **1 and 2** are accepted. Version 2 adds an optional `color` on nodes, groups and edges (a preset name:
+  `red`, `orange`, `yellow`, `green`, `teal`, `blue`, `purple`, `pink`, `gray`; or `#rrggbb`) and makes `layer` optional. A `color` in a
+  version 1 diagram is refused.
 - The document must agree with itself: the commit, file, addition and deletion counts match, the design is at the branch's head, files, commits,
   commit reports and scenarios have unique ids, and the reports a commit points at exist.
 - The app's limits are enforced again: at most 100 commits, 300 files, a path at most 4 096 characters. A file's text or changes are not accepted at all.
