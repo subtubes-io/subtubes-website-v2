@@ -7,8 +7,10 @@ the pull-request report API the desktop app publishes to. Blob storage is
 retained for avatars and future application features.
 
 Design, review, inbox, upload, and synchronization APIs are not available.
-Organizations, authentication, desktop sign-in, avatar storage, and
-[pull-request reports](docs/pull-request-reports-api.md) are supported.
+Organizations, authentication, desktop sign-in, avatar storage,
+[pull-request reports](docs/pull-request-reports-api.md), and the
+[AI API](docs/llm-api.md) (an OpenRouter proxy with budgets and Stripe billing)
+are supported.
 
 ## Local development
 
@@ -62,6 +64,15 @@ under `migrations/helpers` so migration replay does not depend on removed app co
 See [desktop sign-in integration](docs/desktop-api-integration.md) for the
 retained device flow and `/api/v1/me` contract.
 
+## AI API, budgets and billing
+
+Organizations can call OpenRouter models through `/api/llm/v1` with per-member
+API keys. Owners and admins choose the enabled models, set an organization
+monthly budget and per-member limits (or turn AI off for a member), and pay
+with a Pro subscription (monthly AI allowance) and prepaid credits. See
+[docs/llm-api.md](docs/llm-api.md) for the API, the order of checks, Stripe
+setup, configuration and the end-to-end tests.
+
 ## Storage
 
 Keep `@vercel/blob`, both existing Blob stores, and server-only credentials.
@@ -104,6 +115,9 @@ Server-only production configuration:
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | Optional GitHub OAuth credentials |
 | `BLOB_READ_WRITE_TOKEN` | Public avatar store credential |
 | `REPORT_BLOB_READ_WRITE_TOKEN` | Retained private store credential |
+| `LLM_ENABLED`, `OPENROUTER_API_KEY` | AI API kill switch and our OpenRouter key; other `LLM_*` settings in [docs/llm-api.md](docs/llm-api.md) |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO` | Billing; webhook endpoint `https://subtubes.com/api/stripe/webhook` |
+| `CRON_SECRET` | Authenticates Vercel Cron calls to `/api/cron/llm-reconcile` (every 15 minutes, `vercel.json`) |
 
 Register `https://subtubes.com/api/auth/callback/github` with GitHub.
 Origins must not include wildcards, paths, or trailing slashes.

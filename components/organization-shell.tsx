@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useParams, usePathname } from "next/navigation";
-import { FileText, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
+import { CreditCard, FileText, KeyRound, PanelLeftClose, PanelLeftOpen, Sparkles, Users } from "lucide-react";
 
 const storageKey = "subtubes-org-drawer";
 const drawerEvent = "subtubes-org-drawer-change";
@@ -33,6 +33,9 @@ function subscribe(onChange: () => void) {
 const pages = [
   { name: "Users", path: "users", Icon: Users },
   { name: "Reports", path: "reports", Icon: FileText },
+  { name: "AI usage", path: "ai", Icon: Sparkles },
+  { name: "API keys", path: "api-keys", Icon: KeyRound },
+  { name: "Billing", path: "billing", Icon: CreditCard },
 ] as const;
 
 // The organization's pages: a drawer on the left that collapses, and the chosen page beside it.

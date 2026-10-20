@@ -1195,3 +1195,103 @@ input:focus-visible {
 
   .org-content { width: 100%; }
 }
+
+/* AI usage, billing and API keys */
+.ai-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.ai-stat {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px 14px;
+}
+
+.ai-stat dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-stat dd {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0;
+}
+
+.ai-stat-value {
+  color: var(--foreground);
+  font-size: 20px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-stat-hint {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.ai-model-list {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 12px;
+  border: 0;
+  padding: 0;
+}
+
+.ai-model {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.ai-model-list:disabled .ai-model {
+  cursor: default;
+}
+
+.ai-model-name {
+  font-weight: 600;
+}
+
+.ai-model-meta {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ai-member-limit {
+  width: 110px;
+}
+
+.ai-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-key-reveal {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+.ai-key-reveal p {
+  margin: 0;
+  font-size: 13px;
+}
+
+.ai-key-reveal code {
+  overflow-wrap: anywhere;
+  font-family: var(--font-code);
+}

@@ -1,1 +1,3 @@
-{}
+{
+  "crons": [{ "path": "/api/cron/llm-reconcile", "schedule": "*/15 * * * *" }]
+}

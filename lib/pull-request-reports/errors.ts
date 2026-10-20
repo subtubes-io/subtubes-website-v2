@@ -7,6 +7,7 @@ export const ERROR_STATUS = {
   forbidden: 403,
   "organization-not-found": 404,
   "report-not-found": 404,
+  "key-not-found": 404,
   "idempotency-conflict": 409,
   "payload-too-large": 413,
   "unsupported-media-type": 415,
