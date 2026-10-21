@@ -34,8 +34,13 @@ Decided, and now the defaults in code and `.env.example`:
 - [ ] Sign up as an **Organization** (e.g. "Subtubes"), not Individual. Our app is the only caller and does its own per-team
       metering, so OpenRouter's team features aren't needed, but an organization account keeps billing and keys in the company's
       name and lets other people administer it if you leave or are away. Either type works with the code.
-- [ ] Under Settings → Privacy, turn off training/logging and enable "ZDR endpoints only" as an account-wide backstop to
-      `LLM_REQUIRE_ZDR`.
+- [ ] Workspace privacy settings (<https://openrouter.ai/workspaces/default/settings>, the Privacy section; the old
+      `openrouter.ai/settings/privacy` link redirects there). As an account-wide backstop to `LLM_REQUIRE_ZDR`:
+      - turn **on** ZDR enforcement for all five model groups: Anthropic, OpenAI, Google, SpaceXAI and "All other models"
+        (there is no single "ZDR only" switch any more);
+      - leave "OpenRouter use of inputs/outputs" **off** (the 1% discount option).
+- [ ] Observability settings (<https://openrouter.ai/workspaces/default/observability>): leave "Private input & output logging"
+      **off**, so OpenRouter keeps no prompts or completions in its logs.
 - [ ] Create a production API key (Settings → API Keys) named e.g. `subtubes-prod`, with a credit limit of about **$1,100**:
       a little above the $1,000 app ceiling, so the app's ceiling trips first with a clean error and the key limit is only the
       backstop if our accounting goes wrong. The key is shown once; paste it straight into Vercel (section 4), never into a
