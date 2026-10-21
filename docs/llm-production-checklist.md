@@ -71,26 +71,31 @@ Decided, and now the defaults in code and `.env.example`:
 
 - [ ] Confirm the plan supports a cron running every 15 minutes and functions running up to 300 seconds (both are set in the code).
       Hobby doesn't allow either.
-- [ ] Set these Production environment variables:
-  - `OPENROUTER_API_KEY` (Production environment only; mark it Sensitive)
-  - `LLM_ENABLED=false` for now; turn it on in step 6.
-  - `CRON_SECRET` (generate with `openssl rand -hex 32`)
-  - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
-  - `LLM_PRICE_MULTIPLIER=2`, `LLM_PRO_PRICE_USD=39`, `LLM_PRO_ALLOWANCE_USD=20`, `LLM_FREE_MONTHLY_ALLOWANCE_USD=0`,
+- Production environment variables (added 2026-10-20 unless marked otherwise):
+  - [x] `OPENROUTER_API_KEY` (Production only, Sensitive)
+  - [x] `LLM_ENABLED=false` for now; turn it on in step 6.
+  - [x] `CRON_SECRET` (random, Sensitive)
+  - [ ] `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`: still missing, add them after section 3.
+  - [x] `LLM_PRICE_MULTIPLIER=2`, `LLM_PRO_PRICE_USD=39`, `LLM_PRO_ALLOWANCE_USD=20`, `LLM_FREE_MONTHLY_ALLOWANCE_USD=0`,
     `LLM_REQUIRE_ZDR=true` (these are also the defaults, but set them explicitly), and `LLM_GLOBAL_MONTHLY_CEILING_USD`
-- [ ] Make sure `STRIPE_API_BASE` and `OPENROUTER_BASE_URL` are **not** set. They exist only to point tests at fakes.
+- [x] Make sure `STRIPE_API_BASE` and `OPENROUTER_BASE_URL` are **not** set. They exist only to point tests at fakes.
 - [ ] Give Preview its own Stripe test-mode keys, its own OpenRouter key and its own database. Don't share production's.
 
 ## 5. Database
 
 - [ ] Take a Supabase backup.
-- [ ] Run `npm run db:migrate` with `DATABASE_MIGRATION_URL` pointing at production. It only adds new tables.
-- [ ] Confirm Supabase's Data API is still disabled. The new tables include API-key hashes and billing data.
+- [x] Run `npm run db:migrate` with `DATABASE_MIGRATION_URL` pointing at production. It only adds new tables.
+      Done 2026-10-20: `20261022000000_llm_service` applied (via the session pooler, port 5432).
+- [ ] Confirm Supabase's Data API is still disabled (Supabase dashboard → Project Settings → Data API). The new tables, like the
+      existing `user` and `session` tables, have no row-level security and the default `anon`/`authenticated` grants, so if
+      the Data API is on, anyone with the public anon key could read them, including API-key hashes and billing data.
 
 ## 6. Deploy and roll out
 
-1. [ ] Push and merge `edgar/openrouter`. The commit is local only right now.
-2. [ ] Run `vercel deploy --prod`. The project has no Git connection, so a push alone won't deploy it.
+1. [x] Push and merge `edgar/openrouter` (on `origin/main`).
+2. [x] Run `vercel deploy --prod`. The project has no Git connection, so a push alone won't deploy it. Deploy from a clean
+       `git archive main` export so local `.env*` files are never uploaded. Done 2026-10-20 (`dpl_B9JUJkhxDjYWWkc9ENPCY8ikA7jP`),
+       with AI off.
 3. [ ] With AI still off, check that the AI usage, API keys and Billing pages load. Buy $5 of credits on a real card and confirm
        they appear. Subscribe, cancel in the portal, and confirm the plan changes both times.
 4. [ ] Set `LLM_ENABLED=true` and redeploy, or only enable it for your own team first. Then:
