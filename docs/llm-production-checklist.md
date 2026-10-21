@@ -34,16 +34,23 @@ Decided, and now the defaults in code and `.env.example`:
 - [ ] Sign up as an **Organization** (e.g. "Subtubes"), not Individual. Our app is the only caller and does its own per-team
       metering, so OpenRouter's team features aren't needed, but an organization account keeps billing and keys in the company's
       name and lets other people administer it if you leave or are away. Either type works with the code.
-- [ ] Workspace privacy settings (<https://openrouter.ai/workspaces/default/settings>, the Privacy section; the old
-      `openrouter.ai/settings/privacy` link redirects there). As an account-wide backstop to `LLM_REQUIRE_ZDR`:
-      - turn **on** ZDR enforcement for all five model groups: Anthropic, OpenAI, Google, SpaceXAI and "All other models"
-        (there is no single "ZDR only" switch any more);
-      - leave "OpenRouter use of inputs/outputs" **off** (the 1% discount option).
+- [ ] Optional backstop to `LLM_REQUIRE_ZDR` (the app already sends `zdr: true` on every request, so this only matters if that
+      code is ever changed). OpenRouter moved these settings and the workspace Settings page has no ZDR switch, so use a guardrail:
+      1. Open <https://openrouter.ai/workspaces/default/guardrails> and click **New Guardrail** (e.g. "Subtubes ZDR").
+      2. Under **Zero Data Retention**, turn it on for all five groups: Anthropic, OpenAI, Google, SpaceXAI, All other models.
+         Leave the budget, model and provider lists empty: our app does its own budgets and model access, and the workspace
+         budget is already set (see the API key step below).
+      3. Save, then assign it under the guardrail's **API Keys** section to the production key. A guardrail does nothing until
+         it is assigned.
+      4. Check the guardrail's eligibility preview: the 9 catalog models must still be listed.
+      If a Settings → Privacy page does appear in your account (<https://openrouter.ai/settings/privacy>), check that
+      "OpenRouter use of inputs/outputs" (the 1% discount option) is **off**; it is off by default.
 - [ ] Observability settings (<https://openrouter.ai/workspaces/default/observability>): leave "Private input & output logging"
       **off**, so OpenRouter keeps no prompts or completions in its logs.
 - [ ] Create a production API key (Settings → API Keys) named e.g. `subtubes-prod`, with a credit limit of about **$1,100**:
       a little above the $1,000 app ceiling, so the app's ceiling trips first with a clean error and the key limit is only the
-      backstop if our accounting goes wrong. The key is shown once; paste it straight into Vercel (section 4), never into a
+      backstop if our accounting goes wrong. Same for the workspace budget (workspace Settings → Workspace budget, monthly):
+      set it to about $1,100 too. The key is shown once; paste it straight into Vercel (section 4), never into a
       file in the repo.
 - [ ] Create a separate key for Preview/local with a small limit (e.g. $10). Locally it goes in `.env.local`
       (`OPENROUTER_API_KEY=...` and `LLM_ENABLED=true`), which git ignores.
