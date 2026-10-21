@@ -26,10 +26,8 @@ Decided, and now the defaults in code and `.env.example`:
       Per-account limits are separate: each organization's budget and each member's limit, set on the AI usage page.
       $1,000 of OpenRouter cost is about $2,000 of customer spend at ×2. `0` means no ceiling.
 
-Still to decide:
-
-- [ ] **Model catalog.** Check the 9 models and their prices in `lib/llm/models.ts` against OpenRouter's current list. Prices are
-      only used for the up-front estimate, but stale ones make estimates wrong.
+- [x] **Model catalog.** The 9 models and their prices in `lib/llm/models.ts` match OpenRouter's list (checked 2026-10-20).
+      Prices are only used for the up-front estimate; recheck them when OpenRouter changes pricing or a model is added.
 
 ## 2. OpenRouter
 
