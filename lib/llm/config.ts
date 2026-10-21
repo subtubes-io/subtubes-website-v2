@@ -20,7 +20,7 @@ export const llmConfig = {
   /** Only providers that keep no prompts or completions (zero data retention). On unless LLM_REQUIRE_ZDR is "false". */
   requireZdr: () => process.env.LLM_REQUIRE_ZDR !== "false",
   /** All organizations together may not spend more than this per month (OpenRouter cost). 0 = no ceiling. */
-  globalMonthlyCeilingMicros: () => usdToMicros(number("LLM_GLOBAL_MONTHLY_CEILING_USD", 0)),
+  globalMonthlyCeilingMicros: () => usdToMicros(number("LLM_GLOBAL_MONTHLY_CEILING_USD", 1000)),
   /** Allowance every organization without a subscription gets per month, unless overridden on its account. */
   freeMonthlyAllowanceMicros: () => usdToMicros(number("LLM_FREE_MONTHLY_ALLOWANCE_USD", 0)),
   /** Largest request body accepted by the proxy. */

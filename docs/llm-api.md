@@ -147,7 +147,7 @@ stored or logged by Subtubes.
 | `OPENROUTER_API_KEY` | | Our OpenRouter key. Set a credit limit on it in OpenRouter too. |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Tests point this at a fake |
 | `LLM_PRICE_MULTIPLIER` | `2` | What organizations pay per dollar of OpenRouter cost |
-| `LLM_GLOBAL_MONTHLY_CEILING_USD` | `0` (none) | Most all organizations together may cost us at OpenRouter per month, before the multiplier |
+| `LLM_GLOBAL_MONTHLY_CEILING_USD` | `1000` (`0` = none) | Most all organizations together may cost us at OpenRouter per month, before the multiplier |
 | `LLM_FREE_MONTHLY_ALLOWANCE_USD` | `0` | Monthly allowance for organizations without a subscription |
 | `LLM_REQUIRE_ZDR` | on | Zero-data-retention providers only; `false` allows others |
 | `LLM_MAX_BODY_BYTES` | 8 MB | Largest request body |

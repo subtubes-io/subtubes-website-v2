@@ -19,23 +19,32 @@ Decided, and now the defaults in code and `.env.example`:
       - [ ] Before launch, send one request to each enabled model with ZDR on. A model with no zero-retention provider fails with an
             upstream error (the caller is not charged); turn such models off on the AI usage page or drop them from the catalog.
 
-Still to decide:
-
-- [ ] **Overall monthly ceiling** (`LLM_GLOBAL_MONTHLY_CEILING_USD`). This is one limit for **all accounts together**, not per
+- [x] **Overall monthly ceiling: $1,000.** `LLM_GLOBAL_MONTHLY_CEILING_USD=1000`. This is one limit for **all accounts together**, not per
       account: the most Subtubes will spend at OpenRouter in a calendar month across every organization, measured in what we pay
       (before the ×2). When it is reached, every request from every team gets `503 service_unavailable` until the 1st, even
       teams with credits left. It is a safety net against a bug, an abused key or a run of heavy users.
       Per-account limits are separate: each organization's budget and each member's limit, set on the AI usage page.
-      Suggested: a little below the credit limit you put on the OpenRouter key, e.g. `500` for $500 of OpenRouter cost
-      (about $1,000 of customer spend). `0` means no ceiling.
+      $1,000 of OpenRouter cost is about $2,000 of customer spend at ×2. `0` means no ceiling.
+
+Still to decide:
+
 - [ ] **Model catalog.** Check the 9 models and their prices in `lib/llm/models.ts` against OpenRouter's current list. Prices are
       only used for the up-front estimate, but stale ones make estimates wrong.
 
 ## 2. OpenRouter
 
-- [ ] Create a production API key and set a hard credit limit on it in OpenRouter. That limit is the backstop if anything in our
-      accounting goes wrong.
-- [ ] Fund the OpenRouter account.
+- [ ] Sign up as an **Organization** (e.g. "Subtubes"), not Individual. Our app is the only caller and does its own per-team
+      metering, so OpenRouter's team features aren't needed, but an organization account keeps billing and keys in the company's
+      name and lets other people administer it if you leave or are away. Either type works with the code.
+- [ ] Under Settings → Privacy, turn off training/logging and enable "ZDR endpoints only" as an account-wide backstop to
+      `LLM_REQUIRE_ZDR`.
+- [ ] Create a production API key (Settings → API Keys) named e.g. `subtubes-prod`, with a credit limit of about **$1,100**:
+      a little above the $1,000 app ceiling, so the app's ceiling trips first with a clean error and the key limit is only the
+      backstop if our accounting goes wrong. The key is shown once; paste it straight into Vercel (section 4), never into a
+      file in the repo.
+- [ ] Create a separate key for Preview/local with a small limit (e.g. $10). Locally it goes in `.env.local`
+      (`OPENROUTER_API_KEY=...` and `LLM_ENABLED=true`), which git ignores.
+- [ ] Fund the OpenRouter account (and consider auto top-up so the key never runs dry mid-month).
 
 ## 3. Stripe (live mode)
 
@@ -53,7 +62,7 @@ Still to decide:
 - [ ] Confirm the plan supports a cron running every 15 minutes and functions running up to 300 seconds (both are set in the code).
       Hobby doesn't allow either.
 - [ ] Set these Production environment variables:
-  - `OPENROUTER_API_KEY`
+  - `OPENROUTER_API_KEY` (Production environment only; mark it Sensitive)
   - `LLM_ENABLED=false` for now; turn it on in step 6.
   - `CRON_SECRET` (generate with `openssl rand -hex 32`)
   - `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`
