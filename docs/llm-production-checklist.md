@@ -16,8 +16,8 @@ Decided, and now the defaults in code and `.env.example`:
 - [x] **No data kept.** `LLM_REQUIRE_ZDR=true` (now the default): OpenRouter only routes to providers that neither train on nor
       retain prompts and completions. Subtubes itself stores only model, token counts, costs and timestamps for billing, never the
       prompts or replies.
-      - [ ] Before launch, send one request to each enabled model with ZDR on. A model with no zero-retention provider fails with an
-            upstream error (the caller is not charged); turn such models off on the AI usage page or drop them from the catalog.
+      - [x] All 9 catalog models have zero-retention providers on OpenRouter (checked 2026-10-20 via `/api/v1/endpoints/zdr`).
+            Recheck when adding a model: one without a zero-retention provider fails with an upstream error (not charged).
 
 - [x] **Overall monthly ceiling: $1,000.** `LLM_GLOBAL_MONTHLY_CEILING_USD=1000`. This is one limit for **all accounts together**, not per
       account: the most Subtubes will spend at OpenRouter in a calendar month across every organization, measured in what we pay
