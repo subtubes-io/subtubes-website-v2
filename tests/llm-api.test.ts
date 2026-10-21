@@ -25,6 +25,9 @@ const userIds: string[] = [];
 const organizationIds: string[] = [];
 
 const LUNA = "openai/gpt-6-luna";
+// The server's price multiplier: tests run against its default unless LLM_PRICE_MULTIPLIER is set for both.
+const MULTIPLIER = Number(process.env.LLM_PRICE_MULTIPLIER || 2);
+const charge = (micros: number) => Math.ceil(micros * MULTIPLIER);
 const SOL = "openai/gpt-6.1-sol";
 
 // --- The fake OpenRouter and Stripe -------------------------------------------------------------------------------------------------
@@ -326,7 +329,7 @@ test("a plain completion is passed through and its reported cost is charged", { 
   assert.equal(sent.model, LUNA);
   assert.equal(sent.temperature, 0.3);
   assert.equal(sent.max_tokens, 100);
-  assert.deepEqual(sent.provider, { data_collection: "deny" });
+  assert.deepEqual(sent.provider, { data_collection: "deny", zdr: true });
   assert.equal(sent.plugins, undefined);
   assert.equal(sent.models, undefined);
   assert.notEqual(sent.user, "spoofed");
@@ -334,11 +337,11 @@ test("a plain completion is passed through and its reported cost is charged", { 
 
   const row = await settledRow(usageId);
   assert.equal(Number(row.upstreamCostMicros), 123);
-  assert.equal(Number(row.chargedMicros), 123);
+  assert.equal(Number(row.chargedMicros), charge(123));
   assert.equal(row.userId, alice.id);
-  assert.equal(await credits(team), 5_000_000 - 123, "with no plan allowance, credits pay");
+  assert.equal(await credits(team), 5_000_000 - charge(123), "with no plan allowance, credits pay");
   const { rows: [period] } = await pool.query(`SELECT "spentMicros", "reservedMicros" FROM "llmOrgPeriod" WHERE "organizationId" = $1`, [team]);
-  assert.equal(Number(period.spentMicros), 123);
+  assert.equal(Number(period.spentMicros), charge(123));
   assert.equal(Number(period.reservedMicros), 0, "the reservation is released");
 });
 
@@ -350,7 +353,7 @@ test("a stream is passed through byte for byte and settled from its final usage"
   assert.deepEqual(upstreamBodies.at(-1).stream_options, { include_usage: true });
   const row = await settledRow(response.headers.get("x-subtubes-request-id")!);
   assert.equal(row.generationId, "gen-stream-1");
-  assert.equal(Number(row.chargedMicros), 321);
+  assert.equal(Number(row.chargedMicros), charge(321));
   assert.equal(row.inputTokens, 11);
   assert.equal(row.outputTokens, 2);
 });
@@ -394,7 +397,7 @@ test("concurrent requests cannot spend more than the organization has", { skip }
   const org = await teamOrganization([{ person: bob, role: "member" }]);
   const key = await createKey(bob, org);
   const body = chatBody({ model: SOL, max_tokens: 1_000, messages: [{ role: "user", content: "[slow] count to ten" }] });
-  const estimate = worstCaseMicros(findModel(SOL)!, estimateInputTokens(body), 1_000, Number(process.env.LLM_PRICE_MULTIPLIER || 1));
+  const estimate = worstCaseMicros(findModel(SOL)!, estimateInputTokens(body), 1_000, MULTIPLIER);
   // Credits for two and a half worst cases: exactly two of four simultaneous requests may run.
   await pool.query(`INSERT INTO "llmAccount" ("organizationId", "creditMicros") VALUES ($1, $2)`, [org, Math.floor(estimate * 2.5)]);
   const responses = await Promise.all(Array.from({ length: 4 }, () => chat(key, body)));
@@ -430,7 +433,7 @@ test("a stream the client leaves is reconciled from OpenRouter's generation reco
   assert.equal(cron.status, 200);
   const row = await usageRow(usageId);
   assert.equal(row.status, "settled");
-  assert.equal(Number(row.chargedMicros), 500);
+  assert.equal(Number(row.chargedMicros), charge(500));
 });
 
 test("subscriptions set the monthly allowance, which is used before credits", { skip }, async () => {

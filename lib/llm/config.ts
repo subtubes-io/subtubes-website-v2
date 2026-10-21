@@ -15,8 +15,10 @@ export const llmConfig = {
   openRouterBaseUrl: () => (process.env.OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1").replace(/\/+$/, ""),
   openRouterApiKey: () => process.env.OPENROUTER_API_KEY ?? "",
   siteUrl: () => process.env.BETTER_AUTH_URL || "https://subtubes.com",
-  /** Applied to OpenRouter's cost to get what an organization is charged. */
-  priceMultiplier: () => number("LLM_PRICE_MULTIPLIER", 1),
+  /** Applied to OpenRouter's cost to get what an organization is charged: 2 means they pay twice what we pay. */
+  priceMultiplier: () => number("LLM_PRICE_MULTIPLIER", 2),
+  /** Only providers that keep no prompts or completions (zero data retention). On unless LLM_REQUIRE_ZDR is "false". */
+  requireZdr: () => process.env.LLM_REQUIRE_ZDR !== "false",
   /** All organizations together may not spend more than this per month (OpenRouter cost). 0 = no ceiling. */
   globalMonthlyCeilingMicros: () => usdToMicros(number("LLM_GLOBAL_MONTHLY_CEILING_USD", 0)),
   /** Allowance every organization without a subscription gets per month, unless overridden on its account. */

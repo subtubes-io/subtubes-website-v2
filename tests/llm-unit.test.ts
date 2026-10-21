@@ -54,7 +54,7 @@ test("requests are validated and only known fields are forwarded", () => {
   assert.equal(maxTokens, 8_000, "max_tokens is capped at the model's limit");
   const body = buildUpstreamBody(request, model, maxTokens, "user-1");
   assert.deepEqual(Object.keys(body).sort(), ["max_tokens", "messages", "model", "provider", "stream", "stream_options", "temperature", "usage", "user"]);
-  assert.deepEqual(body.provider, { data_collection: "deny" });
+  assert.deepEqual(body.provider, { data_collection: "deny", zdr: true }, "zero data retention is on by default");
   assert.notEqual(body.user, "spoofed");
   assert.notEqual(body.user, "user-1");
   assert.deepEqual(body.stream_options, { include_usage: true });

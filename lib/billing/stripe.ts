@@ -22,7 +22,7 @@ export function plans(): Plan[] {
     {
       id: "pro",
       label: "Pro",
-      priceUsdPerMonth: usdEnv("LLM_PRO_PRICE_USD", 20),
+      priceUsdPerMonth: usdEnv("LLM_PRO_PRICE_USD", 39),
       allowanceMicros: Math.round(usdEnv("LLM_PRO_ALLOWANCE_USD", 20) * 1_000_000),
       stripePriceId: process.env.STRIPE_PRICE_PRO,
     },

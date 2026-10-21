@@ -81,7 +81,7 @@ export function buildUpstreamBody(request: ChatRequest, model: LlmModel, maxToke
   if (body.stream) body.stream_options = { include_usage: true };
   body.usage = { include: true };
   // People's code and designs pass through: providers that train on or keep prompts are never used.
-  body.provider = { data_collection: "deny", ...(process.env.LLM_REQUIRE_ZDR === "true" ? { zdr: true } : {}) };
+  body.provider = { data_collection: "deny", ...(llmConfig.requireZdr() ? { zdr: true } : {}) };
   body.user = upstreamUser(userId);
   return body;
 }

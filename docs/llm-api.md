@@ -49,7 +49,9 @@ The server always sets:
 
 - `max_tokens`, capped at the model's limit. When the request does not set it, the default is the smaller of 16,384 and the model's limit.
 - `usage: {include: true}`, plus `stream_options.include_usage` when streaming.
-- `provider.data_collection: "deny"`. With `LLM_REQUIRE_ZDR=true` it also sets `provider.zdr: true`.
+- `provider: {data_collection: "deny", zdr: true}`: only providers that neither train on nor retain prompts and completions are used.
+  `LLM_REQUIRE_ZDR=false` drops `zdr` (not recommended). A model with no zero-retention provider then fails with an upstream error,
+  and the caller is not charged.
 - `user`: a hash of the member's id.
 
 Responses are OpenRouter's, passed through byte for byte. Each response carries `X-Subtubes-Request-Id`, which identifies the
@@ -135,15 +137,19 @@ Not handled yet: refunds and disputes do not remove credits. Adjust `llmAccount.
 
 ## Configuration
 
+What we store: per request only the model, token counts, costs and timestamps (for billing). Prompts and completions are never
+stored or logged by Subtubes.
+
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `LLM_ENABLED` | off | `true` turns the service on (also needs `OPENROUTER_API_KEY`). The kill switch. |
 | `OPENROUTER_API_KEY` | | Our OpenRouter key. Set a credit limit on it in OpenRouter too. |
 | `OPENROUTER_BASE_URL` | `https://openrouter.ai/api/v1` | Tests point this at a fake |
-| `LLM_PRICE_MULTIPLIER` | `1` | What organizations pay per dollar of OpenRouter cost |
-| `LLM_GLOBAL_MONTHLY_CEILING_USD` | `0` (none) | Most all organizations together may cost us per month |
+| `LLM_PRICE_MULTIPLIER` | `2` | What organizations pay per dollar of OpenRouter cost |
+| `LLM_GLOBAL_MONTHLY_CEILING_USD` | `0` (none) | Most all organizations together may cost us at OpenRouter per month, before the multiplier |
 | `LLM_FREE_MONTHLY_ALLOWANCE_USD` | `0` | Monthly allowance for organizations without a subscription |
-| `LLM_REQUIRE_ZDR` | off | `true` restricts to zero-data-retention providers |
+| `LLM_REQUIRE_ZDR` | on | Zero-data-retention providers only; `false` allows others |
 | `LLM_MAX_BODY_BYTES` | 8 MB | Largest request body |
 | `LLM_RATE_LIMIT_PER_MINUTE` | `60` | Requests per member per minute |
 | `LLM_AUTH_FAILURES_PER_10_MINUTES` | `20` | Bad keys per IP before 429 |
@@ -153,7 +159,7 @@ Not handled yet: refunds and disputes do not remove credits. Adjust `llmAccount.
 | `STRIPE_SECRET_KEY` | | Enables billing |
 | `STRIPE_WEBHOOK_SECRET` | | Signing secret of the webhook endpoint |
 | `STRIPE_PRICE_PRO` | | Stripe price id of the Pro plan |
-| `LLM_PRO_PRICE_USD`, `LLM_PRO_ALLOWANCE_USD` | `20`, `20` | Shown price and included AI of Pro |
+| `LLM_PRO_PRICE_USD`, `LLM_PRO_ALLOWANCE_USD` | `39`, `20` | Shown price and included AI of Pro (in charged dollars, so $20 of allowance costs us at most $10 at ×2) |
 
 ## Testing
 
