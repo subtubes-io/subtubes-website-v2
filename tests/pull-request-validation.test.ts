@@ -39,6 +39,27 @@ test("accepts the document the desktop app publishes, and hashes the bytes it re
   assert.equal(validatePublishBody(body).bodySha256, result.bodySha256);
 });
 
+test("accepts v4 report-section discussion comments", () => {
+  const request = fresh();
+  request.bundle.schemaVersion = 4;
+  request.bundle.discussion = request.bundle.discussion.map((message: Json) => ({
+    ...message,
+    comments: message.comments.map((comment: Json) => ({ kind: "code", ...comment })),
+  }));
+  request.bundle.discussion[0].comments.push({
+    kind: "section",
+    sectionId: "overview",
+    title: "What changed",
+    excerpt: "The report overview.",
+    body: "Why is this important?",
+  });
+  assert.doesNotThrow(() => validatePublishBody(encode(request)));
+  invalid((r) => {
+    r.bundle.schemaVersion = 4;
+    r.bundle.discussion[0].comments = [{ kind: "section", sectionId: "overview", title: "Summary", excerpt: "", body: "", extra: true }];
+  }, "bundle.discussion.0.comments.0");
+});
+
 test("refuses any key that is not in the format, at the top, in the document, and in the design", () => {
   invalid((r) => { r.userId = "u1"; }, "");
   invalid((r) => { r.organizationId = "org"; }, "");
@@ -148,12 +169,12 @@ test("takes no code in the document: a file is listed, and carrying its text or 
 });
 
 test("says which versions it accepts when the document is not one of them", () => {
-  for (const schemaVersion of [1, 2, 4, 99]) {
+  for (const schemaVersion of [1, 2, 5, 99]) {
     const request = fresh();
     request.bundle.schemaVersion = schemaVersion;
     const error = refusal(request);
     assert.equal(error.code, "unsupported-schema-version");
-    assert.deepEqual(error.details, { supported: [3] });
+    assert.deepEqual(error.details, { supported: [3, 4] });
   }
   const request = fresh();
   request.bundle.schemaVersion = "3";

@@ -8,7 +8,7 @@ import { REPOSITORY_KEY_PATTERN, repositoryKey } from "./repository-key";
 
 // A report holds no code (version 3): its files are listed with their status and counts, and the diffs are read from each person's own copy of
 // the repository. Version 2 carried them; the website no longer takes it, but still returns what it stored.
-export const ACCEPTED_SCHEMA_VERSIONS = [3];
+export const ACCEPTED_SCHEMA_VERSIONS = [3, 4];
 
 export const LIMITS = {
   // The whole request body, as sent. Vercel Functions refuse a body over 4.5 MB before any code runs.
@@ -221,83 +221,119 @@ const discussionComment = z.strictObject({
   body: z.string(),
 });
 
-export const bundleSchema = z
-  .strictObject({
-    schemaVersion: z.literal(3),
-    kind: z.literal(BUNDLE_KIND),
-    exportedAt: iso,
-    report: z.strictObject({
-      id,
-      title: z.string(),
-      overview: z.string(),
-      themes: z.array(titledText),
-      risks: z.array(z.strictObject({ severity, title: z.string(), body: z.string() })),
-      createdAt: iso,
-      draftedBy: z.enum(["assistant", "manual"]),
-    }),
-    branch: z.strictObject({
-      name: z.string().min(1),
-      base: z.strictObject({ branch: z.string().min(1), sha }),
-      range: z.strictObject({ startSha: sha, headSha: sha, commitCount: z.number().int().positive() }),
-    }),
-    summary: z.strictObject({
-      commitCount: z.number().int().positive(),
-      fileCount: count,
-      ...stat,
-      authors: z.array(z.string()),
-    }),
-    commits: z
-      .array(
-        z.strictObject({
-          sha,
-          subject: z.string(),
-          author: z.string(),
-          committedAt: iso,
-          files: z.array(z.strictObject({ path: z.string().max(LIMITS.maxPathLength), status: fileStatus, ...stat })),
-          reportId: z.string().nullable(),
-        }),
-      )
-      .min(1)
-      .max(LIMITS.maxCommits),
-    files: z
-      .array(z.strictObject({ path: z.string().min(1).max(LIMITS.maxPathLength), status: fileStatus, ...stat, language: z.string() }))
-      .max(LIMITS.maxFiles),
-    commitReports: z.array(commitReport),
-    design: z.strictObject({
-      designId: id,
-      designName: z.string(),
-      revision: count,
-      headSha: sha,
-      diagram: diagramSchema,
-      scenarios: z.array(scenarioSchema),
-    }),
-    discussion: z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string(), comments: z.array(discussionComment) })),
-  })
-  .superRefine((bundle, ctx) => {
-    const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
-    const { branch, summary, commits, files, commitReports, design } = bundle;
+const sectionDiscussionComment = z.strictObject({
+  kind: z.literal("section"),
+  sectionId: z.string().min(1),
+  title: z.string(),
+  excerpt: z.string(),
+  body: z.string(),
+});
 
-    if (branch.range.commitCount !== commits.length) issue(["branch", "range", "commitCount"], "Does not match the number of commits");
-    if (summary.commitCount !== commits.length) issue(["summary", "commitCount"], "Does not match the number of commits");
-    if (summary.fileCount !== files.length) issue(["summary", "fileCount"], "Does not match the number of files");
-    if (summary.additions !== files.reduce((n, f) => n + f.additions, 0)) issue(["summary", "additions"], "Does not match the files");
-    if (summary.deletions !== files.reduce((n, f) => n + f.deletions, 0)) issue(["summary", "deletions"], "Does not match the files");
-    if (design.headSha !== branch.range.headSha) issue(["design", "headSha"], "Is not the head of the branch");
+const codeDiscussionComment = z.strictObject({
+  kind: z.literal("code"),
+  path: z.string().max(LIMITS.maxPathLength),
+  lines: z.strictObject({
+    start: z.number().int().positive(),
+    end: z.number().int().positive(),
+    side: z.enum(["new", "old"]),
+  }),
+  excerpt: z.string(),
+  body: z.string(),
+});
 
-    for (const path of duplicates(files.map((f) => f.path))) issue(["files"], `Duplicate file "${path}"`);
-    for (const sha of duplicates(commits.map((c) => c.sha))) issue(["commits"], `Duplicate commit "${sha}"`);
-    for (const reportId of duplicates(commitReports.map((r) => r.id))) issue(["commitReports"], `Duplicate report id "${reportId}"`);
-    for (const scenarioId of duplicates(design.scenarios.map((s) => s.id))) issue(["design", "scenarios"], `Duplicate scenario id "${scenarioId}"`);
+const bundleFields = {
+  kind: z.literal(BUNDLE_KIND),
+  exportedAt: iso,
+  report: z.strictObject({
+    id,
+    title: z.string(),
+    overview: z.string(),
+    themes: z.array(titledText),
+    risks: z.array(z.strictObject({ severity, title: z.string(), body: z.string() })),
+    createdAt: iso,
+    draftedBy: z.enum(["assistant", "manual"]),
+  }),
+  branch: z.strictObject({
+    name: z.string().min(1),
+    base: z.strictObject({ branch: z.string().min(1), sha }),
+    range: z.strictObject({ startSha: sha, headSha: sha, commitCount: z.number().int().positive() }),
+  }),
+  summary: z.strictObject({
+    commitCount: z.number().int().positive(),
+    fileCount: count,
+    ...stat,
+    authors: z.array(z.string()),
+  }),
+  commits: z
+    .array(
+      z.strictObject({
+        sha,
+        subject: z.string(),
+        author: z.string(),
+        committedAt: iso,
+        files: z.array(z.strictObject({ path: z.string().max(LIMITS.maxPathLength), status: fileStatus, ...stat })),
+        reportId: z.string().nullable(),
+      }),
+    )
+    .min(1)
+    .max(LIMITS.maxCommits),
+  files: z
+    .array(z.strictObject({ path: z.string().min(1).max(LIMITS.maxPathLength), status: fileStatus, ...stat, language: z.string() }))
+    .max(LIMITS.maxFiles),
+  commitReports: z.array(commitReport),
+  design: z.strictObject({
+    designId: id,
+    designName: z.string(),
+    revision: count,
+    headSha: sha,
+    diagram: diagramSchema,
+    scenarios: z.array(scenarioSchema),
+  }),
+};
 
-    const commitShas = new Set(commits.map((c) => c.sha));
-    commitReports.forEach((report, index) => {
-      if (!commitShas.has(report.commit)) issue(["commitReports", index, "commit"], "Is not one of the commits");
-    });
-    const reportIds = new Set(commitReports.map((r) => r.id));
-    commits.forEach((commit, index) => {
-      if (commit.reportId !== null && !reportIds.has(commit.reportId)) issue(["commits", index, "reportId"], "Is not one of the commit reports");
-    });
+const checkBundle = (bundle: {
+  branch: z.infer<typeof bundleFields.branch>
+  summary: z.infer<typeof bundleFields.summary>
+  commits: z.infer<typeof bundleFields.commits>
+  files: z.infer<typeof bundleFields.files>
+  commitReports: z.infer<typeof bundleFields.commitReports>
+  design: z.infer<typeof bundleFields.design>
+}, ctx: z.RefinementCtx) => {
+  const issue = (path: (string | number)[], message: string) => ctx.addIssue({ code: "custom", path, message });
+  const { branch, summary, commits, files, commitReports, design } = bundle;
+
+  if (branch.range.commitCount !== commits.length) issue(["branch", "range", "commitCount"], "Does not match the number of commits");
+  if (summary.commitCount !== commits.length) issue(["summary", "commitCount"], "Does not match the number of commits");
+  if (summary.fileCount !== files.length) issue(["summary", "fileCount"], "Does not match the number of files");
+  if (summary.additions !== files.reduce((n, f) => n + f.additions, 0)) issue(["summary", "additions"], "Does not match the files");
+  if (summary.deletions !== files.reduce((n, f) => n + f.deletions, 0)) issue(["summary", "deletions"], "Does not match the files");
+  if (design.headSha !== branch.range.headSha) issue(["design", "headSha"], "Is not the head of the branch");
+
+  for (const path of duplicates(files.map((f) => f.path))) issue(["files"], `Duplicate file "${path}"`);
+  for (const sha of duplicates(commits.map((c) => c.sha))) issue(["commits"], `Duplicate commit "${sha}"`);
+  for (const reportId of duplicates(commitReports.map((r) => r.id))) issue(["commitReports"], `Duplicate report id "${reportId}"`);
+  for (const scenarioId of duplicates(design.scenarios.map((s) => s.id))) issue(["design", "scenarios"], `Duplicate scenario id "${scenarioId}"`);
+
+  const commitShas = new Set(commits.map((c) => c.sha));
+  commitReports.forEach((report, index) => {
+    if (!commitShas.has(report.commit)) issue(["commitReports", index, "commit"], "Is not one of the commits");
   });
+  const reportIds = new Set(commitReports.map((r) => r.id));
+  commits.forEach((commit, index) => {
+    if (commit.reportId !== null && !reportIds.has(commit.reportId)) issue(["commits", index, "reportId"], "Is not one of the commit reports");
+  });
+};
+
+const discussionV3 = z.array(z.strictObject({ role: z.enum(["user", "assistant"]), text: z.string(), comments: z.array(discussionComment) }));
+const discussionV4 = z.array(z.strictObject({
+  role: z.enum(["user", "assistant"]),
+  text: z.string(),
+  comments: z.array(z.discriminatedUnion("kind", [codeDiscussionComment, sectionDiscussionComment])),
+}));
+
+export const bundleSchemaV3 = z.strictObject({ schemaVersion: z.literal(3), ...bundleFields, discussion: discussionV3 }).superRefine(checkBundle);
+export const bundleSchemaV4 = z.strictObject({ schemaVersion: z.literal(4), ...bundleFields, discussion: discussionV4 }).superRefine(checkBundle);
+export const bundleSchema = z.discriminatedUnion("schemaVersion", [bundleSchemaV3, bundleSchemaV4]);
 
 export type Bundle = z.infer<typeof bundleSchema>;
 

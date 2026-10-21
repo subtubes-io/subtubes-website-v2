@@ -27,7 +27,7 @@ Nothing is read from the body before step 4. Rate limiting is not implemented ye
 
 - The body is at most 4 250 000 bytes, valid UTF-8, and valid JSON.
 - No string or key holds a null character or a lone surrogate (PostgreSQL cannot store them), no key is `__proto__`, and nesting is at most 64 deep.
-- A `bundle.schemaVersion` that is not accepted (today `3`) is `422 unsupported-schema-version` with `details.supported`.
+- A `bundle.schemaVersion` that is not accepted (currently `3` and `4`) is `422 unsupported-schema-version` with `details.supported`.
 - Every object is strict: a key the format does not list, at any depth, is refused. Every field is checked for type, enum, pattern and range,
   including the **diagram** and each **scenario** in `bundle.design`, which are checked against the app's own diagram and scenario formats
   (unique ids, edges between existing nodes, a scenario's start and branches pointing at existing steps). A diagram carries its own
