@@ -1,0 +1,16 @@
+{
+  "name": "@subtubes/diagram-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The diagram model and the one interface to change it: the file format, the operations, the planner with exact undo, and the controller. No UI.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./versioning": "./src/versioning.ts",
+    "./testing": "./src/testing/index.ts"
+  },
+  "peerDependencies": {
+    "zod": "^4",
+    "zustand": "^5"
+  }
+}

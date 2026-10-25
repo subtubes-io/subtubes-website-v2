@@ -1,0 +1,310 @@
+{
+  "schemaVersion": 2,
+  "name": "Subtubes - Proposed Architecture",
+  "description": "Layered architecture for Subtubes: UI, agent runtime, tool surfaces and domain data, connected by calls and async events.",
+  "groups": [
+    {
+      "id": "g-ui",
+      "title": "Client / UI",
+      "layer": "ui",
+      "x": 0,
+      "y": 0,
+      "w": 340,
+      "h": 620,
+      "color": "blue"
+    },
+    {
+      "id": "g-runtime",
+      "title": "Agent Runtime (Harness)",
+      "layer": "runtime",
+      "x": 560,
+      "y": 0,
+      "w": 340,
+      "h": 800,
+      "color": "purple"
+    },
+    {
+      "id": "g-tools",
+      "title": "Tool Surfaces",
+      "layer": "tools",
+      "x": 1120,
+      "y": 0,
+      "w": 340,
+      "h": 620,
+      "color": "orange"
+    },
+    {
+      "id": "g-domain",
+      "title": "Domain & Data",
+      "layer": "domain",
+      "x": 1680,
+      "y": 0,
+      "w": 340,
+      "h": 800,
+      "color": "green"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "ui-canvas",
+      "title": "Diagram Canvas",
+      "layer": "ui",
+      "x": 30,
+      "y": 60,
+      "w": 280,
+      "h": 150,
+      "body": "- Renders the graph and direct edits\n- Live updates from the Event Bus\n- Shows AI proposals as a diff",
+      "color": "blue"
+    },
+    {
+      "id": "ui-chat",
+      "title": "Chat Panel",
+      "layer": "ui",
+      "x": 30,
+      "y": 240,
+      "w": 280,
+      "h": 150,
+      "body": "- UI only: no file access, no model calls\n- `@mentions` resolve to node IDs\n- Accept / reject AI proposals"
+    },
+    {
+      "id": "ui-playback",
+      "title": "Simulation Player",
+      "x": 30,
+      "y": 420,
+      "w": 280,
+      "h": 150,
+      "body": "- Play, pause, step, replay\n- Pick happy path or failure mode\n- Code viewer highlights snippets",
+      "color": "#0ea5e9"
+    },
+    {
+      "id": "rt-loop",
+      "title": "Agent Loop",
+      "layer": "runtime",
+      "x": 590,
+      "y": 60,
+      "w": 280,
+      "h": 150,
+      "body": "- Plan, call tools, observe, respond\n- Streams text and tool events\n- Step limit and cancellation",
+      "color": "purple"
+    },
+    {
+      "id": "rt-ctx",
+      "title": "Context Builder",
+      "layer": "runtime",
+      "x": 590,
+      "y": 240,
+      "w": 280,
+      "h": 150,
+      "body": "- Diagram summary by default\n- Selection and mentioned nodes in full\n- Token budget and truncation",
+      "color": "purple"
+    },
+    {
+      "id": "rt-provider",
+      "title": "Model Provider Adapter",
+      "layer": "runtime",
+      "x": 590,
+      "y": 420,
+      "w": 280,
+      "h": 150,
+      "body": "- One interface: OpenAI, Anthropic, local\n- Streaming and tool calls\n- Normalizes vendor differences",
+      "color": "purple"
+    },
+    {
+      "id": "rt-approval",
+      "title": "Proposal & Approval Gate",
+      "layer": "runtime",
+      "x": 590,
+      "y": 600,
+      "w": 280,
+      "h": 150,
+      "body": "- AI writes are **proposals** first\n- Deletes and bulk edits need approval\n- Applied as one undoable transaction",
+      "color": "purple"
+    },
+    {
+      "id": "tool-diagram",
+      "title": "Diagram MCP Server",
+      "layer": "tools",
+      "x": 1150,
+      "y": 60,
+      "w": 280,
+      "h": 170,
+      "body": "**Read:** `getNode`, `getDiagram`\n\n**Write:** `applyChanges`\n\n```ts\nupdateNode({ id }, { title })\n```",
+      "color": "orange"
+    },
+    {
+      "id": "tool-code",
+      "title": "Code Tools (read-only)",
+      "layer": "tools",
+      "x": 1150,
+      "y": 240,
+      "w": 280,
+      "h": 150,
+      "body": "- `readFile`, `searchText`, `findSymbol`\n- Snippets with line numbers\n- Rooted at **one directory**",
+      "color": "orange"
+    },
+    {
+      "id": "tool-sim",
+      "title": "Simulation & Highlight Tools",
+      "layer": "tools",
+      "x": 1150,
+      "y": 420,
+      "w": 280,
+      "h": 150,
+      "body": "- `highlightNode`, `highlightCodeSnippet`\n- `startScenario`, `stepScenario`\n- Highlights are *transient* events",
+      "color": "orange"
+    },
+    {
+      "id": "d-store",
+      "title": "Diagram Store",
+      "layer": "domain",
+      "x": 1710,
+      "y": 60,
+      "w": 280,
+      "h": 150,
+      "body": "- Versioned, serializable **JSON**\n- Typed nodes, conditional edges\n- Cycles allowed (retries, loops)",
+      "color": "green"
+    },
+    {
+      "id": "d-sim",
+      "title": "Simulation Engine",
+      "layer": "domain",
+      "x": 1710,
+      "y": 240,
+      "w": 280,
+      "h": 150,
+      "body": "- Deterministic graph walker\n- AI picks fuzzy branches and narrates\n- Emits a step event per node",
+      "color": "green"
+    },
+    {
+      "id": "d-scenario",
+      "title": "Scenario Store",
+      "layer": "domain",
+      "x": 1710,
+      "y": 420,
+      "w": 280,
+      "h": 150,
+      "body": "- Named, replayable runs\n- Pinned to a diagram revision\n- Flagged stale when design changes",
+      "color": "green"
+    },
+    {
+      "id": "d-bus",
+      "title": "Event Bus",
+      "layer": "domain",
+      "x": 1710,
+      "y": 600,
+      "w": 280,
+      "h": 150,
+      "body": "- `diagram.changed`, `highlight.set`\n- `simulation.step`, `proposal.created`\n- Closes the loop back to the UI",
+      "color": "green"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "ui-chat",
+      "to": "rt-loop",
+      "label": "message + mention IDs + selection",
+      "color": "red"
+    },
+    {
+      "id": "e2",
+      "from": "rt-loop",
+      "to": "rt-ctx",
+      "label": "build context"
+    },
+    {
+      "id": "e3",
+      "from": "rt-loop",
+      "to": "rt-provider",
+      "label": "prompt + tools (streamed)"
+    },
+    {
+      "id": "e4",
+      "from": "rt-loop",
+      "to": "rt-approval",
+      "label": "risky writes"
+    },
+    {
+      "id": "e5",
+      "from": "rt-approval",
+      "to": "tool-diagram",
+      "label": "approved batch + revision"
+    },
+    {
+      "id": "e6",
+      "from": "rt-loop",
+      "to": "tool-code",
+      "label": "readFile, findSymbol"
+    },
+    {
+      "id": "e7",
+      "from": "rt-loop",
+      "to": "tool-sim",
+      "label": "highlight, step"
+    },
+    {
+      "id": "e8",
+      "from": "tool-diagram",
+      "to": "d-store",
+      "label": "revision-checked CRUD"
+    },
+    {
+      "id": "e9",
+      "from": "tool-sim",
+      "to": "d-sim",
+      "label": "run / step scenario"
+    },
+    {
+      "id": "e10",
+      "from": "d-sim",
+      "to": "d-store",
+      "label": "walk nodes + edges"
+    },
+    {
+      "id": "e11",
+      "from": "d-sim",
+      "to": "d-scenario",
+      "label": "record steps"
+    },
+    {
+      "id": "e12",
+      "from": "d-store",
+      "to": "d-bus",
+      "label": "diagram.changed",
+      "dashed": true
+    },
+    {
+      "id": "e13",
+      "from": "d-bus",
+      "to": "ui-canvas",
+      "label": "live updates",
+      "dashed": true
+    },
+    {
+      "id": "e14",
+      "from": "d-sim",
+      "to": "rt-loop",
+      "label": "optional step narration",
+      "dashed": true,
+      "optional": true
+    },
+    {
+      "id": "e15",
+      "from": "ui-canvas",
+      "to": "d-store",
+      "label": "user edits (revision-checked)"
+    },
+    {
+      "id": "e16",
+      "from": "ui-playback",
+      "to": "d-sim",
+      "label": "play / pause / step"
+    },
+    {
+      "id": "e17",
+      "from": "rt-loop",
+      "to": "tool-diagram",
+      "label": "reads + small writes"
+    }
+  ]
+}

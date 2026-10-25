@@ -1,0 +1,14 @@
+{
+  "name": "@subtubes/diagram-agent-tools",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The tools an AI agent uses on a diagram (read it, search it, change it), built from a @subtubes/diagram-core controller.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@subtubes/diagram-core": "*",
+    "zod": "^4"
+  }
+}

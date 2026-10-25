@@ -1,0 +1,17 @@
+{
+  "name": "@subtubes/diagram-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The default React canvas for a @subtubes/diagram-core controller: pan and zoom, nodes, groups and edges, editing in place, colours, and a read-only viewer.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./diagram.css": "./src/diagram.css",
+    "./theme.css": "./src/theme.css"
+  },
+  "peerDependencies": {
+    "@subtubes/diagram-core": "*",
+    "react": "^19",
+    "zustand": "^5"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "name": "@subtubes/scenario-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The scenario engine: the scenario file format, running a scripted walk against a graph of nodes and edges, checking that it fits, and the highlights a run lights up. No UI.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@subtubes/diagram-core": "*",
+    "zod": "^4"
+  }
+}

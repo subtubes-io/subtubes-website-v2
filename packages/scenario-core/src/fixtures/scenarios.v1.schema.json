@@ -1,0 +1,512 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "scenarios": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "A short unique id, lowercase with dashes, for example \"refund-declined\". Not already used by another scenario in the design."
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The name shown in the scenario list."
+          },
+          "description": {
+            "type": "string",
+            "description": "One or two sentences on what the scenario shows."
+          },
+          "triggers": {
+            "description": "Words that make the chat suggest this scenario.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^\\w+$",
+                  "description": "The name used in \"input.<name>\" and {{input.<name>}}. Letters, digits and underscore."
+                },
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What the person sees next to the field."
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "number",
+                    "boolean",
+                    "select"
+                  ]
+                },
+                "default": {
+                  "description": "The value used when the person does not change it. Must suit the type.",
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                "options": {
+                  "description": "The choices, for type \"select\".",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "help": {
+                  "type": "string"
+                },
+                "fromChat": {
+                  "description": "Fill this field from what the person wrote in the chat when the scenario is proposed.",
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "name",
+                "label",
+                "type",
+                "default"
+              ],
+              "additionalProperties": false
+            },
+            "description": "What the person can vary before a run. May be empty."
+          },
+          "presets": {
+            "description": "Named sets of input values, for quick choices.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "values": {
+                  "type": "object",
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "additionalProperties": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "name",
+                "values"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "initialState": {
+            "description": "Starting values of the run state, read as \"state.<name>\".",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            }
+          },
+          "start": {
+            "type": "string",
+            "minLength": 1,
+            "description": "The id of the first step: a key of \"steps\"."
+          },
+          "steps": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "node": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "The id of the diagram node where this step happens. Use ids from getDiagram, never titles."
+                },
+                "title": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "What happens here, as a short sentence. May use {{input.x}} and {{state.x}}."
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "effects": {
+                  "type": "array",
+                  "items": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "value": {
+                            "type": [
+                              "string",
+                              "number",
+                              "boolean"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "set",
+                          "value"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "add": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "set",
+                          "add"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "set": {
+                            "type": "string",
+                            "minLength": 1
+                          },
+                          "derive": {
+                            "type": "object",
+                            "properties": {
+                              "from": {
+                                "type": "string",
+                                "pattern": "^(input|state)\\.[\\w]+$",
+                                "description": "Where to read a value: \"input.<name>\" is something the user entered; \"state.<name>\" is something an earlier step set."
+                              },
+                              "rules": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "contains": {
+                                      "minItems": 1,
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "minLength": 1
+                                      }
+                                    },
+                                    "value": {
+                                      "type": [
+                                        "string",
+                                        "number",
+                                        "boolean"
+                                      ]
+                                    }
+                                  },
+                                  "required": [
+                                    "contains",
+                                    "value"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "description": "Tried in order; the first whose words appear in the text wins."
+                              },
+                              "default": {
+                                "type": [
+                                  "string",
+                                  "number",
+                                  "boolean"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "from",
+                              "rules",
+                              "default"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "ai": {
+                            "description": "Mark the result as something the assistant would work out, in the display.",
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "set",
+                          "derive"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ],
+                    "description": "Changes the run state when the step happens. {set, value} stores a value (text may use {{input.x}}/{{state.x}}); {set, add} adds to a number; {set, derive} reads free text and picks a value by keyword."
+                  }
+                },
+                "calls": {
+                  "description": "Side trips to other nodes that return immediately; they show on the diagram but do not move the flow.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "type": "string",
+                        "minLength": 1,
+                        "description": "The id of a diagram node that this node calls and gets an answer from straight away (a lookup, a tool). Ideally an edge goes from this node to it."
+                      },
+                      "title": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "detail": {
+                        "type": "string"
+                      },
+                      "when": {
+                        "$ref": "#/$defs/__schema0"
+                      }
+                    },
+                    "required": [
+                      "to",
+                      "title"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "next": {
+                  "description": "Where to go after this step. With none (and no \"end\"), the run ends as a success.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "description": "The id of the next step (a key of \"steps\").",
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "end": {
+                        "type": "object",
+                        "properties": {
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "success",
+                              "failure",
+                              "blocked"
+                            ],
+                            "description": "How the run ended: \"success\", \"failure\" (something went wrong), or \"blocked\" (it was refused or had to stop)."
+                          },
+                          "message": {
+                            "type": "string",
+                            "minLength": 1,
+                            "description": "One sentence saying what happened. May use {{input.x}} and {{state.x}}."
+                          }
+                        },
+                        "required": [
+                          "outcome",
+                          "message"
+                        ],
+                        "additionalProperties": false,
+                        "description": "Ends the run here."
+                      },
+                      "when": {
+                        "description": "Take this branch only if the condition holds. Branches are tried in order, so put a branch with no \"when\" last as the fallback.",
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "label": {
+                        "description": "A short label for the branch, shown where the choice was made.",
+                        "type": "string"
+                      }
+                    },
+                    "additionalProperties": false,
+                    "description": "A way forward from a step: either \"to\" another step, or \"end\" the run."
+                  }
+                },
+                "end": {
+                  "description": "Ends the run at this step, instead of \"next\".",
+                  "type": "object",
+                  "properties": {
+                    "outcome": {
+                      "type": "string",
+                      "enum": [
+                        "success",
+                        "failure",
+                        "blocked"
+                      ],
+                      "description": "How the run ended: \"success\", \"failure\" (something went wrong), or \"blocked\" (it was refused or had to stop)."
+                    },
+                    "message": {
+                      "type": "string",
+                      "minLength": 1,
+                      "description": "One sentence saying what happened. May use {{input.x}} and {{state.x}}."
+                    }
+                  },
+                  "required": [
+                    "outcome",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "node",
+                "title"
+              ],
+              "additionalProperties": false,
+              "description": "One step of the scenario, at one diagram node."
+            },
+            "description": "The steps, by id. Branches and \"start\" refer to these ids."
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "inputs",
+          "start",
+          "steps"
+        ],
+        "additionalProperties": false,
+        "description": "A scripted walk through the design: steps at diagram nodes, joined by branches, ending with an outcome."
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "scenarios"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "description": "A test on the input or the run state. Combine tests with {all:[...]}, {any:[...]} or {not:...}.",
+      "anyOf": [
+        {
+          "type": "object",
+          "properties": {
+            "all": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          },
+          "required": [
+            "all"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "any": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/__schema0"
+              }
+            }
+          },
+          "required": [
+            "any"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "not": {
+              "$ref": "#/$defs/__schema0"
+            }
+          },
+          "required": [
+            "not"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string",
+              "pattern": "^(input|state)\\.[\\w]+$",
+              "description": "Where to read a value: \"input.<name>\" is something the user entered; \"state.<name>\" is something an earlier step set."
+            },
+            "op": {
+              "type": "string",
+              "enum": [
+                "eq",
+                "ne",
+                "gt",
+                "gte",
+                "lt",
+                "lte",
+                "in",
+                "contains",
+                "truthy"
+              ],
+              "description": "\"eq\"/\"ne\" compare for equality; \"gt\"/\"gte\"/\"lt\"/\"lte\" compare numbers; \"in\" needs a list as value; \"contains\" is a case-insensitive text match; \"truthy\" needs no value."
+            },
+            "value": {
+              "anyOf": [
+                {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean"
+                  ]
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": [
+                      "string",
+                      "number",
+                      "boolean"
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "required": [
+            "path",
+            "op"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    }
+  }
+}

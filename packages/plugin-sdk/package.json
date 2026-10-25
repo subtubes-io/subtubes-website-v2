@@ -1,0 +1,14 @@
+{
+  "name": "@subtubes/plugin-sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The Subtubes plugin contract: the manifest, permissions, the API a plugin calls, and the messages between its parts. No UI and no app.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "@subtubes/diagram-core": "*",
+    "zod": "^4"
+  }
+}

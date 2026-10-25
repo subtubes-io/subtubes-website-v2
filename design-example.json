@@ -1,0 +1,609 @@
+{
+  "format": "subtubes-design",
+  "schemaVersion": 1,
+  "diagram": {
+    "schemaVersion": 3,
+    "name": "Gmail ingestion on AWS",
+    "description": "Gmail push notifications flow through Google Pub/Sub into AWS, where a per-user sync worker fetches new mail, filters it, runs an LLM and writes validated items to a review queue.",
+    "type": "system",
+    "groups": [
+      {
+        "id": "google",
+        "title": "Google Cloud",
+        "x": -40,
+        "y": -60,
+        "w": 1200,
+        "h": 250,
+        "color": "purple"
+      },
+      {
+        "id": "aws",
+        "title": "AWS",
+        "x": -70,
+        "y": 224,
+        "w": 1200,
+        "h": 1040,
+        "color": "teal"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "gmail",
+        "title": "Gmail",
+        "x": 0,
+        "y": 0,
+        "w": 280,
+        "h": 150,
+        "body": "- User mailbox\n- `users.watch` on INBOX\n- Emits a historyId on change",
+        "color": "purple"
+      },
+      {
+        "id": "pubsub",
+        "title": "Google Pub/Sub",
+        "x": 400,
+        "y": 0,
+        "w": 280,
+        "h": 150,
+        "body": "- Topic with gmail-api-push publisher\n- Push subscription with OIDC auth",
+        "color": "purple"
+      },
+      {
+        "id": "gmail-api",
+        "title": "Gmail API",
+        "x": 800,
+        "y": 0,
+        "w": 280,
+        "h": 150,
+        "body": "- `history.list` from cursor\n- `messages.get` raw or metadata\n- `watch` renewal",
+        "color": "purple"
+      },
+      {
+        "id": "scheduler",
+        "title": "EventBridge Scheduler",
+        "x": -30,
+        "y": 264,
+        "w": 280,
+        "h": 150,
+        "body": "- Daily watch renewal\n- Safety-net sync every few hours",
+        "color": "teal"
+      },
+      {
+        "id": "webhook",
+        "title": "Webhook Lambda",
+        "x": 370,
+        "y": 264,
+        "w": 280,
+        "h": 150,
+        "body": "- Verifies Google OIDC token\n- Decodes emailAddress, historyId\n- Enqueues and returns 200 fast",
+        "color": "teal"
+      },
+      {
+        "id": "sqs",
+        "title": "SQS FIFO Queue",
+        "x": 370,
+        "y": 534,
+        "w": 280,
+        "h": 150,
+        "body": "- `MessageGroupId` = userId\n- Dedupe ID collapses bursts\n- One sync per user at a time",
+        "color": "teal"
+      },
+      {
+        "id": "dlq",
+        "title": "Dead-Letter Queue",
+        "x": 770,
+        "y": 534,
+        "w": 280,
+        "h": 150,
+        "body": "Jobs that keep failing land here for inspection and replay.",
+        "color": "gray"
+      },
+      {
+        "id": "dynamodb",
+        "title": "DynamoDB",
+        "x": -30,
+        "y": 804,
+        "w": 280,
+        "h": 150,
+        "body": "**Why we need it**\n\nThe Sync Worker is stateless and runs as short-lived Lambda invocations, so it has nowhere to remember how far it has read in each mailbox. DynamoDB is that memory.\n\n- **Incremental sync:** Gmail's history API returns only changes after a given `historyId`. Saving the cursor after each run means we fetch just the new messages, not the whole mailbox.\n- **No missed or repeated mail:** Pub/Sub pushes are at-least-once and can arrive out of order or be duplicated. A durable cursor lets a retried or duplicate job pick up exactly where the last one stopped.\n- **Deduplication:** claim records keyed on account and message ID make processing idempotent, even if two workers overlap or the cursor is behind.\n- **Watch renewal:** Gmail watches expire (about 7 days). Storing the expiration lets the scheduled job find accounts that need renewing before notifications silently stop.\n- **Recovery:** if the cursor is stale or invalid, the worker can detect it and fall back to a full resync.\n- **Why DynamoDB:** the access pattern is a single-key read and write per account, with bursty traffic and low volume. On-demand billing means we pay almost nothing while testing, with no capacity to manage.\n\n**Table:** `gmail-ingestion-dev-sync-state`\n\n- On-demand billing (`PAY_PER_REQUEST`), no provisioned capacity\n- Partition key `account_id` (string), sort key `sk` (string)\n- Cursor item: `sk = CURSOR`, one per connected Gmail account\n- Claim items: `sk = MSG#<message_id>`, one per processed message, with a TTL so they expire after a few days\n\n**Stores**\n- `historyId` cursor per user, saved as a Number so it compares numerically\n- Watch expiration, status\n- Refresh token encrypted with KMS\n- Claim records for processed messages\n\n**Write rules**\n- The cursor only moves forward: `UpdateItem` with `ConditionExpression: attribute_not_exists(history_id) OR history_id < :new`. A failed condition means a newer job already advanced it, and the worker ignores that.\n- The value saved is the `historyId` from Gmail's history response, never a message ID.\n- A claim is a `PutItem` with `attribute_not_exists(sk)`. If it fails, the message was already handled and is skipped.\n\n**Access**\n- Sync Worker reads and saves the cursor and claims (`GetItem`, `PutItem`, `UpdateItem`)\n- No other component has table access\n\n**Protection**\n- Point-in-time recovery on\n- Server-side encryption on",
+        "color": "teal"
+      },
+      {
+        "id": "worker",
+        "title": "Sync Worker",
+        "x": 370,
+        "y": 804,
+        "w": 280,
+        "h": 150,
+        "body": "**What it does**\n\nThe Sync Worker is the Lambda that turns a \"something changed\" signal into new messages ready for review. It is triggered by SQS, one job per invocation, and does the following for each job:\n\n1. **Read the job.** The job names an account (`account_id`) and a type: a sync from a Pub/Sub push, or a renewal and safety sync from the scheduler. The job is only a signal. Its `historyId` is a hint, never the data to process.\n2. **Load state.** Reads the account's `historyId` cursor and watch details from DynamoDB, and the Gmail OAuth credentials from Secrets Manager.\n3. **Skip stale jobs.** If the stored cursor is already at or past the job's `historyId`, an earlier job has covered it, so the worker finishes the job as a no-op.\n4. **Renew the watch** (renewal jobs). If the Gmail watch is near expiry, calls `users.watch` again and saves the new expiration.\n5. **Fetch changes.** Calls the Gmail API history endpoint from the saved cursor and collects the IDs of messages added since then. Pages through results until done. Gmail orders history by mailbox, so one run returns every change in order, however the notifications arrived.\n6. **Fetch messages.** Gets the full content of each new message.\n7. **Claim each message.** Writes a claim record for `account_id + message_id` with a conditional put (`attribute_not_exists`). Only messages whose claim succeeds continue, so a duplicate or retried job skips mail that was already handled.\n8. **Filter.** Drops messages that don't match the account's rules, such as labels, senders or other criteria, so we don't spend LLM calls on them.\n9. **Hand off.** Sends matching messages to Filter + LLM, which writes validated items to the Review Queue.\n10. **Save the cursor.** Writes the `historyId` returned by Gmail's history response (never a message ID, and not the job's hint) to DynamoDB with a conditional write that only succeeds if it is greater than the stored value. This happens only after the hand-off succeeds, so a failure never skips mail, and a slow job finishing late can never move the cursor backwards.\n11. **Finish the job.** Reports success to SQS. A failure is returned as a batch item failure, so SQS retries it and eventually moves it to the Dead-Letter Queue.\n\n**Ordering and duplicates**\n- Notifications can arrive out of order (a slow call from Google can deliver message 2 before message 1). That is safe: the first job to run fetches everything after the cursor, including both messages, and the late job is skipped as stale.\n- Two workers overlapping on one account (a redelivery after the visibility timeout, or a different message group) is handled by the claim records and the conditional cursor write.\n- First sync with no cursor: take a baseline `historyId` from `users.getProfile` and backfill recent mail with `messages.list`. Starting from the notification's `historyId` would skip the message that triggered it.\n\n**Failure handling**\n- A 404 on the cursor means Gmail has dropped that history, so the worker falls back to a full resync.\n- Rate limits (429) and Gmail 5xx errors are retried by SQS, with the job becoming visible again after the visibility timeout.\n- Revoked or invalid credentials mark the account's status as needing reauthorization instead of retrying forever.\n- It is idempotent on message ID, so a retried or duplicate job never produces duplicate review items.\n\n**Runtime**\n- Lambda, or ECS for long resyncs\n- Batch size of 1 on the FIFO queue, with the account as the message group, so one account is normally not synced by two workers at once. This is a first line of defence, not the only one.\n- Reserved concurrency is capped to protect the Gmail API quota\n- Access: SQS (receive and delete), DynamoDB cursor and claim records, Secrets Manager, and send to the Review Queue",
+        "color": "teal"
+      },
+      {
+        "id": "llm",
+        "title": "Filter + LLM",
+        "x": 370,
+        "y": 1074,
+        "w": 280,
+        "h": 150,
+        "body": "- Sender check via Gmail Authentication-Results\n- Bedrock or Claude API\n- Zod schema validation",
+        "color": "blue"
+      },
+      {
+        "id": "review",
+        "title": "Review Queue",
+        "x": 770,
+        "y": 1074,
+        "w": 280,
+        "h": 150,
+        "body": "- Validated JSON items\n- Review UI renders text only\n- No auto responses",
+        "color": "teal"
+      }
+    ],
+    "edges": [
+      {
+        "id": "e1",
+        "from": "gmail",
+        "to": "pubsub",
+        "label": "publish change",
+        "dashed": true
+      },
+      {
+        "id": "e2",
+        "from": "pubsub",
+        "to": "webhook",
+        "label": "push notification",
+        "dashed": true
+      },
+      {
+        "id": "e3",
+        "from": "webhook",
+        "to": "sqs",
+        "label": "enqueue sync job"
+      },
+      {
+        "id": "e4",
+        "from": "scheduler",
+        "to": "sqs",
+        "label": "enqueue renewal and safety sync",
+        "dashed": true
+      },
+      {
+        "id": "e5",
+        "from": "sqs",
+        "to": "worker",
+        "label": "deliver job"
+      },
+      {
+        "id": "e6",
+        "from": "sqs",
+        "to": "dlq",
+        "label": "move failed jobs",
+        "optional": true
+      },
+      {
+        "id": "e7",
+        "from": "worker",
+        "to": "dynamodb",
+        "label": "read and save cursor"
+      },
+      {
+        "id": "e8",
+        "from": "worker",
+        "to": "gmail-api",
+        "label": "fetch history and messages"
+      },
+      {
+        "id": "e9",
+        "from": "worker",
+        "to": "llm",
+        "label": "send matching messages"
+      },
+      {
+        "id": "e10",
+        "from": "llm",
+        "to": "review",
+        "label": "write validated item"
+      }
+    ]
+  },
+  "scenarios": [
+    {
+      "id": "pubsub-push-to-webhook",
+      "title": "Pub/Sub push reaches the webhook",
+      "description": "Gmail publishes a change, Pub/Sub pushes it to the Webhook Lambda, which checks the token and enqueues a sync job on the FIFO queue.",
+      "inputs": [
+        {
+          "name": "email",
+          "label": "Mailbox",
+          "type": "text",
+          "default": "user@example.com"
+        },
+        {
+          "name": "token_valid",
+          "label": "Pub/Sub token is valid",
+          "type": "boolean",
+          "default": true
+        }
+      ],
+      "start": "publish",
+      "steps": {
+        "publish": {
+          "node": "gmail",
+          "title": "A new message arrives in {{input.email}} and Gmail publishes a change",
+          "detail": "The Gmail watch sends a notification with the mailbox address and the latest historyId.",
+          "next": [
+            {
+              "to": "push"
+            }
+          ]
+        },
+        "push": {
+          "node": "pubsub",
+          "title": "Pub/Sub pushes the notification to the webhook URL",
+          "detail": "Delivery is at-least-once, so the same notification may arrive more than once.",
+          "next": [
+            {
+              "to": "handle"
+            }
+          ]
+        },
+        "handle": {
+          "node": "webhook",
+          "title": "Webhook checks the Pub/Sub token, then enqueues a sync job for {{input.email}}",
+          "detail": "The Function URL has no AWS auth, so the handler must verify the Pub/Sub OIDC token itself. A valid notification becomes a sync job carrying the account and the historyId, with the account as the message group. Content-based deduplication drops repeated pushes of the same notification.",
+          "calls": [
+            {
+              "to": "sqs",
+              "title": "Add the sync job for {{input.email}} to the FIFO queue",
+              "when": {
+                "path": "input.token_valid",
+                "op": "eq",
+                "value": true
+              }
+            }
+          ],
+          "next": [
+            {
+              "end": {
+                "outcome": "blocked",
+                "message": "Rejected with 401. Nothing was enqueued."
+              },
+              "when": {
+                "path": "input.token_valid",
+                "op": "eq",
+                "value": false
+              },
+              "label": "token invalid"
+            },
+            {
+              "end": {
+                "outcome": "success",
+                "message": "The webhook returned 200 so Pub/Sub stops retrying, and a sync job is waiting on the queue."
+              },
+              "label": "token valid"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "sync-worker-processes-job",
+      "title": "Sync Worker processes a sync job",
+      "description": "The Sync Worker takes a job from the queue, reads the cursor, fetches new messages from Gmail, filters them, sends matches through the LLM to the review queue, and saves the cursor. Gmail failures leave the cursor alone so SQS can retry.",
+      "inputs": [
+        {
+          "name": "email",
+          "label": "Mailbox",
+          "type": "text",
+          "default": "user@example.com"
+        },
+        {
+          "name": "gmail_ok",
+          "label": "Gmail API is available",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "name": "cursor_valid",
+          "label": "Saved cursor is still valid",
+          "type": "boolean",
+          "default": true
+        },
+        {
+          "name": "matches",
+          "label": "New messages that match the filter",
+          "type": "number",
+          "default": 2
+        }
+      ],
+      "start": "deliver",
+      "steps": {
+        "deliver": {
+          "node": "sqs",
+          "title": "Queue delivers the sync job for {{input.email}} to the worker",
+          "detail": "Batch size is 1 and the account is the message group, so only one worker handles this account at a time.",
+          "next": [
+            {
+              "to": "sync"
+            }
+          ]
+        },
+        "sync": {
+          "node": "worker",
+          "title": "Worker syncs {{input.email}}: reads the cursor, fetches and filters new messages",
+          "detail": "It loads the saved historyId and asks Gmail for changes since then. If Gmail has dropped that history (404), it falls back to a full resync. It then fetches the new messages and filters them against the account's rules. {{input.matches}} message(s) match.",
+          "calls": [
+            {
+              "to": "dynamodb",
+              "title": "Read the historyId cursor for {{input.email}}"
+            },
+            {
+              "to": "gmail-api",
+              "title": "List history from the saved historyId",
+              "when": {
+                "all": [
+                  {
+                    "path": "input.gmail_ok",
+                    "op": "eq",
+                    "value": true
+                  },
+                  {
+                    "path": "input.cursor_valid",
+                    "op": "eq",
+                    "value": true
+                  }
+                ]
+              }
+            },
+            {
+              "to": "gmail-api",
+              "title": "Cursor returns 404, so list recent messages for a full resync",
+              "when": {
+                "all": [
+                  {
+                    "path": "input.gmail_ok",
+                    "op": "eq",
+                    "value": true
+                  },
+                  {
+                    "path": "input.cursor_valid",
+                    "op": "eq",
+                    "value": false
+                  }
+                ]
+              }
+            },
+            {
+              "to": "gmail-api",
+              "title": "Get full content of the new messages",
+              "when": {
+                "path": "input.gmail_ok",
+                "op": "eq",
+                "value": true
+              }
+            },
+            {
+              "to": "gmail-api",
+              "title": "Request fails (rate limit or server error)",
+              "when": {
+                "path": "input.gmail_ok",
+                "op": "eq",
+                "value": false
+              }
+            },
+            {
+              "to": "dynamodb",
+              "title": "Nothing matched, so advance the cursor to the latest historyId",
+              "when": {
+                "all": [
+                  {
+                    "path": "input.gmail_ok",
+                    "op": "eq",
+                    "value": true
+                  },
+                  {
+                    "path": "input.matches",
+                    "op": "lte",
+                    "value": 0
+                  }
+                ]
+              }
+            }
+          ],
+          "next": [
+            {
+              "end": {
+                "outcome": "failure",
+                "message": "The worker reports the job as failed and leaves the cursor alone, so no mail is skipped. SQS retries the job and, after repeated failures, moves it to the dead-letter queue."
+              },
+              "when": {
+                "path": "input.gmail_ok",
+                "op": "eq",
+                "value": false
+              },
+              "label": "Gmail unavailable"
+            },
+            {
+              "end": {
+                "outcome": "success",
+                "message": "No messages matched. The cursor moved forward, nothing was sent for review, and the job is deleted from the queue."
+              },
+              "when": {
+                "path": "input.matches",
+                "op": "lte",
+                "value": 0
+              },
+              "label": "none match"
+            },
+            {
+              "to": "classify",
+              "label": "matches found"
+            }
+          ]
+        },
+        "classify": {
+          "node": "llm",
+          "title": "Filter + LLM classifies and validates the {{input.matches}} matching message(s)",
+          "detail": "The output is checked against a schema before it is accepted.",
+          "next": [
+            {
+              "to": "review-item"
+            }
+          ]
+        },
+        "review-item": {
+          "node": "review",
+          "title": "Validated items are written to the review queue",
+          "detail": "Once the hand-off is accepted, the worker saves the new historyId to DynamoDB and reports success, so the job is deleted from the queue.",
+          "end": {
+            "outcome": "success",
+            "message": "{{input.matches}} item(s) are waiting in the review queue, the cursor moved forward, and the job is deleted from the queue."
+          }
+        }
+      }
+    },
+    {
+      "id": "out-of-order-notifications",
+      "title": "Message 2 is notified before message 1",
+      "description": "Two messages arrive, but a slow call from Google delivers message 2's notification first. Shows how the cursor and claim rules keep the result correct, and what goes wrong without them.",
+      "inputs": [
+        {
+          "name": "cursor_start",
+          "label": "Saved cursor before either message",
+          "type": "number",
+          "default": 100
+        },
+        {
+          "name": "history_1",
+          "label": "historyId of message 1",
+          "type": "number",
+          "default": 110
+        },
+        {
+          "name": "history_2",
+          "label": "historyId of message 2",
+          "type": "number",
+          "default": 120
+        },
+        {
+          "name": "safe_design",
+          "label": "Conditional cursor write and message claims are in place",
+          "type": "boolean",
+          "default": true
+        }
+      ],
+      "start": "publish",
+      "steps": {
+        "publish": {
+          "node": "gmail",
+          "title": "Message 1 (historyId {{input.history_1}}) and then message 2 (historyId {{input.history_2}}) arrive in the mailbox",
+          "detail": "Gmail publishes a notification for each. Each carries only the mailbox and its historyId, not the message.",
+          "next": [
+            {
+              "to": "push"
+            }
+          ]
+        },
+        "push": {
+          "node": "pubsub",
+          "title": "A slow call delays message 1's notification, so message 2's is pushed first",
+          "detail": "Pub/Sub does not guarantee order, so the webhook sees historyId {{input.history_2}} before {{input.history_1}}.",
+          "next": [
+            {
+              "to": "webhook"
+            }
+          ]
+        },
+        "webhook": {
+          "node": "webhook",
+          "title": "Webhook enqueues the job for {{input.history_2}}, and later the job for {{input.history_1}}",
+          "detail": "Both tokens are valid. The jobs are enqueued in arrival order, which is not Gmail's order.",
+          "calls": [
+            {
+              "to": "sqs",
+              "title": "Job {{input.history_2}} is enqueued first, job {{input.history_1}} after it"
+            }
+          ],
+          "next": [
+            {
+              "to": "deliver"
+            }
+          ]
+        },
+        "deliver": {
+          "node": "sqs",
+          "title": "Queue delivers job {{input.history_2}} to the worker first",
+          "detail": "Both jobs are in the same message group (the account), so job {{input.history_1}} is not delivered until the first finishes.",
+          "next": [
+            {
+              "to": "sync"
+            }
+          ]
+        },
+        "sync": {
+          "node": "worker",
+          "title": "Worker runs job {{input.history_2}}: it reads the cursor and fetches everything after it",
+          "detail": "The job's historyId is only a hint. The worker asks Gmail for all changes after the saved cursor, so one run returns both message 1 and message 2, in order.",
+          "calls": [
+            {
+              "to": "dynamodb",
+              "title": "Read the cursor: {{input.cursor_start}}"
+            },
+            {
+              "to": "gmail-api",
+              "title": "List history after {{input.cursor_start}}: returns message 1 and message 2, latest historyId {{input.history_2}}"
+            },
+            {
+              "to": "dynamodb",
+              "title": "Claim message 1 and message 2 (conditional put on account and message ID)",
+              "when": {
+                "path": "input.safe_design",
+                "op": "eq",
+                "value": true
+              }
+            }
+          ],
+          "next": [
+            {
+              "to": "classify"
+            }
+          ]
+        },
+        "classify": {
+          "node": "llm",
+          "title": "Filter + LLM classifies and validates both messages",
+          "next": [
+            {
+              "to": "review-item"
+            }
+          ]
+        },
+        "review-item": {
+          "node": "review",
+          "title": "Two validated items are written to the review queue",
+          "detail": "With the safe design, the worker then saves cursor {{input.history_2}} only if it is greater than the stored value. Job {{input.history_1}} is later delivered, finds the cursor already at {{input.history_2}}, and is skipped as stale. Without it, job {{input.history_1}} runs after job {{input.history_2}} and saves its own, older id as the cursor.",
+          "next": [
+            {
+              "end": {
+                "outcome": "failure",
+                "message": "The late job overwrote the cursor with {{input.history_1}}. The next sync fetches message 2 again, so it is processed twice and a duplicate item reaches the review queue."
+              },
+              "when": {
+                "path": "input.safe_design",
+                "op": "eq",
+                "value": false
+              },
+              "label": "no conditional write"
+            },
+            {
+              "end": {
+                "outcome": "success",
+                "message": "Both messages were processed once. The cursor is {{input.history_2}}, the late job for {{input.history_1}} was skipped as stale, and nothing was duplicated or lost."
+              },
+              "label": "conditional write and claims"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}

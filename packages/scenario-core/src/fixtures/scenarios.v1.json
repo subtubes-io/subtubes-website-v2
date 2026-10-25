@@ -1,0 +1,210 @@
+{
+  "schemaVersion": 1,
+  "scenarios": [
+    {
+      "id": "ai-edit",
+      "title": "AI edits the diagram",
+      "description": "You ask the assistant to change the diagram. Watch the request travel through the agent runtime, the approval gate and the store.",
+      "triggers": ["add", "delet", "remov", "renam", "creat", "edit the", "change the", "undo stack"],
+      "inputs": [
+        {
+          "name": "message",
+          "label": "Your message",
+          "type": "text",
+          "default": "Add an undo stack next to the gate",
+          "fromChat": true,
+          "help": "Words like delete or remove (including deleting, removing) count as high risk."
+        },
+        { "name": "approved", "label": "You approve risky changes", "type": "boolean", "default": true },
+        { "name": "staleRevision", "label": "Diagram changed since the agent read it", "type": "boolean", "default": false }
+      ],
+      "presets": [
+        { "name": "Add a node", "values": { "message": "Add an undo stack next to the gate", "approved": true, "staleRevision": false } },
+        { "name": "Delete, you approve", "values": { "message": "Delete the Event Bus node", "approved": true, "staleRevision": false } },
+        { "name": "Delete, you reject", "values": { "message": "Delete the Event Bus node", "approved": false, "staleRevision": false } },
+        { "name": "Stale revision", "values": { "message": "Rename the Agent Loop node", "approved": true, "staleRevision": true } }
+      ],
+      "initialState": { "revision": 12 },
+      "start": "send",
+      "steps": {
+        "send": {
+          "node": "ui-chat",
+          "title": "You send “{{input.message}}”",
+          "detail": "The chat panel sends the text with any @mentions and your current selection.",
+          "next": [{ "to": "loop", "label": "message + mention IDs + selection" }]
+        },
+        "loop": {
+          "node": "rt-loop",
+          "title": "Agent loop starts the turn",
+          "detail": "Interprets the request, then plans the change.",
+          "effects": [
+            {
+              "set": "intent",
+              "ai": true,
+              "derive": {
+                "from": "input.message",
+                "rules": [
+                  { "contains": ["delet", "remov", "drop"], "value": "delete" },
+                  { "contains": ["renam", "chang", "updat", "edit"], "value": "update" }
+                ],
+                "default": "add"
+              }
+            },
+            {
+              "set": "risk",
+              "derive": { "from": "state.intent", "rules": [{ "contains": ["delete"], "value": "high" }], "default": "low" }
+            }
+          ],
+          "calls": [
+            { "to": "rt-ctx", "title": "Builds the context", "detail": "Diagram summary, your selection and the nodes you mentioned." },
+            { "to": "rt-provider", "title": "Model plans the change", "detail": "Intent: {{state.intent}}, risk: {{state.risk}}." }
+          ],
+          "next": [
+            { "to": "approval", "when": { "path": "state.risk", "op": "eq", "value": "high" }, "label": "High risk: needs approval" },
+            { "to": "apply", "label": "Low risk: apply directly" }
+          ]
+        },
+        "approval": {
+          "node": "rt-approval",
+          "title": "Approval gate holds the change",
+          "detail": "A proposal is shown. Nothing is applied until you decide.",
+          "effects": [{ "set": "proposal", "value": "pending" }],
+          "next": [
+            { "to": "apply", "when": { "path": "input.approved", "op": "truthy" }, "label": "You approve" },
+            { "end": { "outcome": "blocked", "message": "You rejected the proposal. Nothing was applied." }, "label": "You reject" }
+          ]
+        },
+        "apply": {
+          "node": "tool-diagram",
+          "title": "Diagram tools apply the change",
+          "detail": "Every write carries expectedRevision {{state.revision}}.",
+          "next": [
+            {
+              "end": { "outcome": "failure", "message": "Rejected: expectedRevision {{state.revision}} is stale. The agent must re-read the diagram and retry." },
+              "when": { "path": "input.staleRevision", "op": "truthy" },
+              "label": "Revision is stale"
+            },
+            { "to": "store", "label": "Revision matches" }
+          ]
+        },
+        "store": {
+          "node": "d-store",
+          "title": "Diagram Store commits the change",
+          "detail": "Commits revision {{state.revision}} and records the inverse patch so it can be undone.",
+          "effects": [{ "set": "revision", "add": 1 }],
+          "next": [{ "to": "publish" }]
+        },
+        "publish": {
+          "node": "d-bus",
+          "title": "Event bus publishes diagram.changed",
+          "detail": "Revision {{state.revision}}.",
+          "next": [{ "to": "render" }]
+        },
+        "render": {
+          "node": "ui-canvas",
+          "title": "Canvas renders the change",
+          "end": { "outcome": "success", "message": "Done: “{{input.message}}” was applied as revision {{state.revision}}." }
+        }
+      }
+    },
+    {
+      "id": "replay",
+      "title": "Replay a saved scenario",
+      "description": "You press Play on a recorded scenario. The engine checks it still matches the diagram, replays it, and can have the assistant narrate each step.",
+      "triggers": ["replay", "play", "saved scenario", "stale", "recorded"],
+      "inputs": [
+        { "name": "scenarioName", "label": "Scenario name", "type": "text", "default": "Happy path" },
+        { "name": "diagramChanged", "label": "Diagram changed since it was recorded", "type": "boolean", "default": false },
+        { "name": "narrate", "label": "AI narration on", "type": "boolean", "default": true }
+      ],
+      "presets": [
+        { "name": "Replay with narration", "values": { "scenarioName": "Happy path", "diagramChanged": false, "narrate": true } },
+        { "name": "Replay without narration", "values": { "scenarioName": "Happy path", "diagramChanged": false, "narrate": false } },
+        { "name": "Stale scenario", "values": { "scenarioName": "Failure mode", "diagramChanged": true, "narrate": true } }
+      ],
+      "initialState": { "revision": 12 },
+      "start": "play",
+      "steps": {
+        "play": {
+          "node": "ui-playback",
+          "title": "You press Play on “{{input.scenarioName}}”",
+          "next": [{ "to": "run", "label": "play / pause / step" }]
+        },
+        "run": {
+          "node": "d-sim",
+          "title": "Simulation engine starts the run",
+          "detail": "Checks the scenario was recorded against this diagram revision.",
+          "calls": [{ "to": "d-store", "title": "Reads the diagram", "detail": "Walks nodes and edges at revision {{state.revision}}." }],
+          "next": [
+            {
+              "end": { "outcome": "blocked", "message": "The scenario is stale: the diagram changed after it was recorded. Re-run or re-record it." },
+              "when": { "path": "input.diagramChanged", "op": "truthy" },
+              "label": "Diagram changed"
+            },
+            { "to": "narrate", "when": { "path": "input.narrate", "op": "truthy" }, "label": "Narration on" },
+            { "to": "record", "label": "Narration off" }
+          ]
+        },
+        "narrate": {
+          "node": "rt-loop",
+          "title": "Agent loop narrates the steps",
+          "calls": [{ "to": "rt-provider", "title": "Model writes the narration", "detail": "One short sentence per step." }],
+          "end": { "outcome": "success", "message": "Replay finished with AI narration." }
+        },
+        "record": {
+          "node": "d-scenario",
+          "title": "Scenario store records the replay",
+          "end": { "outcome": "success", "message": "Replay finished and was saved." }
+        }
+      }
+    },
+    {
+      "id": "user-edit",
+      "title": "You edit a node",
+      "description": "You change a node on the canvas. The edit is checked against the current revision, and a conflict keeps your change as a draft.",
+      "triggers": ["edit a node", "type in", "conflict", "double-click", "my edit"],
+      "inputs": [
+        { "name": "nodeTitle", "label": "Node you edit", "type": "text", "default": "Agent Loop" },
+        { "name": "conflict", "label": "Someone changed it first", "type": "boolean", "default": false }
+      ],
+      "presets": [
+        { "name": "Clean edit", "values": { "nodeTitle": "Agent Loop", "conflict": false } },
+        { "name": "Edit conflict", "values": { "nodeTitle": "Event Bus", "conflict": true } }
+      ],
+      "initialState": { "revision": 12 },
+      "start": "edit",
+      "steps": {
+        "edit": {
+          "node": "ui-canvas",
+          "title": "You edit “{{input.nodeTitle}}”",
+          "detail": "Double-click the body and change the Markdown.",
+          "next": [{ "to": "check", "label": "user edits (revision-checked)" }]
+        },
+        "check": {
+          "node": "d-store",
+          "title": "Store checks expectedRevision {{state.revision}}",
+          "next": [
+            {
+              "end": { "outcome": "failure", "message": "Conflict: “{{input.nodeTitle}}” changed since you opened it. Your edit is kept as a draft." },
+              "when": { "path": "input.conflict", "op": "truthy" },
+              "label": "Conflict"
+            },
+            { "to": "publish", "label": "No conflict" }
+          ]
+        },
+        "publish": {
+          "node": "d-bus",
+          "title": "Event bus publishes diagram.changed",
+          "detail": "Revision {{state.revision}}.",
+          "effects": [{ "set": "revision", "add": 1 }],
+          "next": [{ "to": "render" }]
+        },
+        "render": {
+          "node": "ui-canvas",
+          "title": "Canvas shows the saved edit",
+          "end": { "outcome": "success", "message": "Saved as revision {{state.revision}}." }
+        }
+      }
+    }
+  ]
+}

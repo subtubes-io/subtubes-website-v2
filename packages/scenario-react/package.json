@@ -1,0 +1,17 @@
+{
+  "name": "@subtubes/scenario-react",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The scenario player for React: the state of a run (play, pause, step), playback controls, the trace and state panels, and a player that puts them together. No comments, no app.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./scenario.css": "./src/scenario.css",
+    "./theme.css": "./src/theme.css"
+  },
+  "peerDependencies": {
+    "@subtubes/scenario-core": "*",
+    "react": "^19",
+    "zustand": "^5"
+  }
+}

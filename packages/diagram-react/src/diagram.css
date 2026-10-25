@@ -1,0 +1,796 @@
+/* The canvas of @subtubes/diagram-react. It reads CSS variables for everything themed: see theme.css for the list and default values, or
+   define them in the host's own theme. Colours a node, group or edge can have are --c-<preset> (see COLOR_PRESETS). */
+
+/* The buttons the canvas has in itself (zoom). */
+.dg-btn,
+.dg-icon-btn {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.dg-btn {
+  padding: 7px 14px;
+  font-weight: 500;
+}
+
+.dg-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dg-btn:hover,
+.dg-icon-btn:hover {
+  background: var(--surface-2);
+}
+
+/* A node's content when the host gives no Markdown renderer. */
+.dg-plain {
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Canvas */
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  container-type: inline-size;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, var(--dot) 1.2px, transparent 1.3px);
+}
+
+.canvas.dragging {
+  cursor: grabbing;
+}
+
+.canvas-head {
+  position: absolute;
+  inset: 14px 16px auto 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.canvas-head h1 {
+  font-size: 20px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.edge-style-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--node-shadow);
+  pointer-events: auto;
+}
+
+.edge-style-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.edge-style-btn:hover {
+  color: var(--text);
+}
+
+.edge-style-btn[aria-pressed='true'] {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.edge-style-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-control {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: var(--node-shadow);
+  pointer-events: auto;
+}
+
+.color-swatch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text) 25%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.color-swatch[aria-pressed='true'],
+.color-swatch.on {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-swatch:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.color-swatch.custom {
+  overflow: hidden;
+  background: conic-gradient(#ef4444, #f59e0b, #10b981, #3b82f6, #8b5cf6, #ef4444);
+}
+
+.color-swatch.custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.group {
+  position: absolute;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--layer) 35%, var(--border));
+  background: var(--group-bg);
+  transition: opacity 0.3s ease;
+  /* Only the title bar and border take the pointer (below), so the inside still pans the canvas. */
+  pointer-events: none;
+}
+
+.group.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.swimlane {
+  border-radius: 4px;
+}
+
+.swimlane .group-bar {
+  height: 88px;
+  border-radius: 4px 4px 0 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.lane-description {
+  position: absolute;
+  inset: 38px 20px 8px;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.lane-error {
+  position: absolute;
+  top: 96px;
+  left: 24px;
+  z-index: 2;
+  padding: 8px;
+  background: var(--surface);
+  color: var(--text);
+}
+
+.lane-content {
+  position: absolute;
+  inset: 88px 0 0;
+  pointer-events: auto;
+}
+
+.lane-edit {
+  position: absolute;
+  z-index: 8;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  box-sizing: border-box;
+  pointer-events: auto;
+}
+
+.lane-edit label {
+  display: grid;
+  gap: 4px;
+}
+
+.lane-edit input,
+.lane-edit textarea {
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  padding: 6px;
+  font: inherit;
+}
+
+.swimlane-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+  flex-basis: 100%;
+}
+
+.canvas-head:has(.swimlane-controls) {
+  flex-wrap: wrap;
+}
+
+.canvas-head:has(.swimlane-controls) h1 {
+  margin: 0;
+  min-width: 0;
+  flex: 1;
+}
+
+.swimlane-controls .dg-btn,
+.swimlane-controls select {
+  font-size: 12px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.group-bar,
+.group-edge {
+  position: absolute;
+  pointer-events: auto;
+  cursor: grab;
+}
+
+.group-bar {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 44px;
+  border-radius: 16px 16px 0 0;
+}
+
+.group-edge-s { left: 0; right: 0; bottom: -4px; height: 9px; }
+.group-edge-w { top: 44px; bottom: 0; left: -4px; width: 9px; }
+.group-edge-e { top: 44px; bottom: 0; right: -4px; width: 9px; }
+
+.group-title {
+  position: absolute;
+  top: 16px;
+  left: 20px;
+  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--layer);
+}
+
+/* A node or group is drawn in --layer: its own colour when it has one (set inline), else the neutral default. */
+.node,
+.group {
+  --layer: var(--node-default);
+}
+
+.edges,
+.labels {
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.edge {
+  fill: none;
+  stroke: var(--edge);
+  stroke-width: 1.6;
+  opacity: 0.85;
+  transition: opacity 0.3s ease, stroke-width 0.3s ease;
+}
+
+.edge.dashed {
+  stroke: var(--edge-dashed);
+  stroke-dasharray: 7 5;
+}
+
+.edge.optional {
+  stroke: var(--edge-optional);
+}
+
+.edge.colored {
+  stroke: var(--edge-color);
+}
+
+.edge.selected {
+  stroke: var(--accent);
+  stroke-width: 3;
+  opacity: 1;
+}
+
+.edge.hl-visited {
+  stroke: var(--tools);
+  stroke-width: 2.4;
+  opacity: 0.95;
+}
+
+/* The edge a scenario is travelling right now: dashes flow toward the target. */
+.edge.hl-active {
+  stroke: var(--tools);
+  stroke-width: 4.2;
+  stroke-dasharray: 9 7;
+  opacity: 1;
+  filter: drop-shadow(0 0 5px color-mix(in srgb, var(--tools) 75%, transparent));
+  animation: edge-flow 0.7s linear infinite;
+}
+
+.edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 16;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.edge-label.selected .label-bg {
+  stroke: var(--accent);
+}
+
+.edge-label.selected .label-text {
+  fill: var(--text);
+}
+
+.arrow-head {
+  fill: var(--edge);
+}
+
+.label-bg {
+  fill: var(--surface);
+  stroke: var(--border);
+}
+
+.label-text {
+  font-size: 10.5px;
+  fill: var(--muted);
+  font-family: var(--font);
+}
+
+.edge-label {
+  transition: opacity 0.3s ease;
+}
+
+.edge-label.hl-visited .label-bg {
+  stroke: var(--tools);
+}
+
+/* The label of the edge being travelled stands out like a tag on it. */
+.edge-label.hl-active .label-bg {
+  fill: var(--tools);
+  stroke: var(--tools);
+}
+
+.edge-label.hl-active .label-text {
+  fill: #1b1405;
+  font-weight: 700;
+}
+
+.resize-box {
+  position: absolute;
+  pointer-events: none;
+}
+
+.resize-handle {
+  position: absolute;
+  width: calc(10px * var(--inv, 1));
+  height: calc(10px * var(--inv, 1));
+  margin: calc(-5px * var(--inv, 1)) 0 0 calc(-5px * var(--inv, 1));
+  border: calc(1.5px * var(--inv, 1)) solid var(--accent);
+  border-radius: 2px;
+  background: var(--bg, #fff);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.connect-box {
+  position: absolute;
+  pointer-events: none;
+}
+
+.connect-handle {
+  position: absolute;
+  width: calc(14px * var(--inv, 1));
+  height: calc(14px * var(--inv, 1));
+  margin: calc(-7px * var(--inv, 1)) 0 0 calc(-7px * var(--inv, 1));
+  border-radius: 50%;
+  border: calc(2px * var(--inv, 1)) solid var(--accent);
+  background: var(--bg, #fff);
+  cursor: crosshair;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.connect-handle:hover {
+  background: var(--accent);
+}
+
+.connect-preview {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.connect-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+}
+
+.connect-line.ready {
+  stroke-dasharray: none;
+}
+
+.node.connect-target {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.node {
+  position: absolute;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--node-bg);
+  border: 1.5px solid var(--layer);
+  box-shadow: var(--node-shadow);
+  overflow: hidden;
+  cursor: grab;
+  user-select: none;
+  transition: opacity 0.3s ease, transform 0.3s ease, box-shadow 0.3s ease, filter 0.3s ease;
+}
+
+.node.selected {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.node:has(.node-expand) h2 {
+  padding-right: 26px;
+}
+
+.node-expand {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  color: var(--text);
+  background: var(--node-bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.node-expand:hover,
+.node-expand:focus-visible {
+  background: var(--surface-2);
+  outline: 2px solid var(--accent);
+}
+
+/* Emphasis driven by the highlight store (for example while a scenario plays) */
+.node.hl-visited {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tools) 45%, transparent), var(--node-shadow);
+}
+
+/* The current step lifts off the canvas: slightly larger, brighter ring, deeper shadow. */
+.node.hl-active,
+.node.hl-success,
+.node.hl-failure,
+.node.hl-blocked {
+  z-index: 6;
+  transform: scale(1.04);
+}
+
+.node.hl-active {
+  outline: 3px solid var(--tools);
+  outline-offset: 3px;
+  box-shadow:
+    0 0 0 6px color-mix(in srgb, var(--tools) 26%, transparent),
+    0 16px 36px rgba(0, 0, 0, 0.4);
+  animation: node-pulse 1.1s ease-in-out infinite;
+}
+
+.node.hl-success {
+  outline: 3px solid var(--ok);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--ok) 24%, transparent), 0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+.node.hl-failure {
+  outline: 3px solid var(--danger);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 24%, transparent), 0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+.node.hl-blocked {
+  outline: 3px dashed var(--tools);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--tools) 20%, transparent), 0 16px 36px rgba(0, 0, 0, 0.4);
+}
+
+/* Focus: while a run is on screen, fade whatever it has not touched so the flow stands
+   out. Three tiers: the current step is full strength, the trail already played is
+   readable, everything else recedes. */
+.world.focus .group {
+  opacity: 0.4;
+}
+
+.world.focus .node:not([class*='hl-']) {
+  opacity: 0.18;
+  filter: grayscale(0.7);
+}
+
+.world.focus .node.hl-visited {
+  opacity: 0.72;
+}
+
+.world.focus .edge:not([class*='hl-']) {
+  opacity: 0.1;
+}
+
+.world.focus .edge.hl-visited {
+  opacity: 0.7;
+}
+
+.world.focus .edge-label:not([class*='hl-']) {
+  opacity: 0.08;
+}
+
+.world.focus .edge-label.hl-visited {
+  opacity: 0.65;
+}
+
+.node.editing {
+  cursor: auto;
+  user-select: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.node-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  cursor: auto;
+}
+
+.node-edit-title,
+.node-edit-body,
+.edge-edit {
+  font: inherit;
+  color: var(--text, inherit);
+  background: var(--bg, #fff);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 4px 8px;
+  outline: none;
+}
+
+.node-edit-title {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.node-edit-body {
+  flex: 1;
+  min-height: 0;
+  resize: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.group-edit {
+  position: absolute;
+  z-index: 5;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 3px 8px;
+  outline: none;
+}
+
+.edge-edit {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  z-index: 5;
+}
+
+.node h2 {
+  font-size: 15px;
+  font-weight: 650;
+  margin-bottom: 8px;
+}
+
+.zoom {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  font-size: 12px;
+  cursor: default;
+}
+
+.zoom .dg-icon-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 14px;
+}
+
+.zoom .dg-btn {
+  padding: 0 8px;
+  height: 22px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.zoom-pct {
+  min-width: 36px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--muted, inherit);
+}
+
+@media (max-width: 760px) {
+
+  .canvas {
+    flex: 1 1 0;
+    min-height: 0;
+  }
+
+  .canvas-head h1 {
+    font-size: 16px;
+  }
+}
+
+
+.canvas-empty {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 340px;
+  padding: 16px 18px;
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.canvas-empty strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.zoom .dg-btn {
+  white-space: nowrap;
+}
+
+/* The right-click menu on the canvas */
+.canvas-menu {
+  position: fixed;
+  z-index: 50;
+  display: grid;
+  min-width: 170px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+
+.canvas-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.canvas-menu button:hover,
+.canvas-menu button:focus-visible {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: none;
+}

@@ -1,0 +1,46 @@
+{
+  "id": "ample.computer",
+  "name": "Ample",
+  "version": "0.1.0",
+  "apiVersion": 1,
+  "description": "Deploy the project to ample.computer from a panel in the sidebar.",
+  "ui": { "entry": "ui.js" },
+  "node": { "entry": "node.mjs" },
+  "contributes": {
+    "sidebarViews": [{ "id": "deploy", "title": "Deploy", "icon": "Rocket", "order": 27 }],
+    "commands": [{ "id": "deploy", "title": "Ample: Deploy this project" }],
+    "chatShortcuts": [
+      {
+        "word": "!ship",
+        "does": "check, then deploy to Ample",
+        "help": "Runs the Ample checks for this project and, when they pass, deploys it.",
+        "instructions": "The shortcut !ship means: call the check tool. If it reports problems, say what they are and stop. Otherwise call the deploy tool and tell the person where it went."
+      }
+    ],
+    "chatTools": [
+      {
+        "id": "check",
+        "description": "Check the project's ample.toml and what a deploy would do, without deploying.",
+        "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+        "risk": "read",
+        "runsIn": "node"
+      },
+      {
+        "id": "deploy",
+        "description": "Deploy the project to Ample. Needs the checks to pass first.",
+        "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false },
+        "risk": "write",
+        "runsIn": "node"
+      }
+    ],
+    "settings": [{ "key": "autoCheck", "label": "Check the project whenever ample.toml changes", "type": "boolean", "default": true }]
+  },
+  "permissions": [
+    { "permission": "node", "reason": "Runs the deploy and keeps its progress while you do other things." },
+    { "permission": "exec:ample", "reason": "Deploys by running the ample command-line tool." },
+    { "permission": "net:ample.computer", "reason": "Checks that your sign-in and your deployed app are reachable." },
+    { "permission": "files.read", "reason": "Reads ample.toml to show what will be deployed." },
+    { "permission": "llm.complete", "reason": "Suggests answers when Ample asks how your services start." },
+    { "permission": "chat.contribute", "reason": "Adds the !ship shortcut and two tools to the assistant." }
+  ]
+}

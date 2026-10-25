@@ -1,0 +1,254 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 3
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "description": {
+      "type": "string"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "system",
+        "swimlane"
+      ]
+    },
+    "groups": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "ui",
+              "runtime",
+              "tools",
+              "domain"
+            ]
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "w": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "h": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink",
+                  "gray"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            ]
+          },
+          "lane": {
+            "type": "object",
+            "properties": {
+              "body": {
+                "type": "string"
+              },
+              "orientation": {
+                "type": "string",
+                "enum": [
+                  "horizontal",
+                  "vertical"
+                ]
+              }
+            },
+            "required": [
+              "body",
+              "orientation"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "x",
+          "y",
+          "w",
+          "h"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "layer": {
+            "type": "string",
+            "enum": [
+              "ui",
+              "runtime",
+              "tools",
+              "domain"
+            ]
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "w": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "h": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "body": {
+            "type": "string"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink",
+                  "gray"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "x",
+          "y",
+          "w",
+          "h",
+          "body"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "from": {
+            "type": "string",
+            "minLength": 1
+          },
+          "to": {
+            "type": "string",
+            "minLength": 1
+          },
+          "label": {
+            "type": "string"
+          },
+          "dashed": {
+            "type": "boolean"
+          },
+          "optional": {
+            "type": "boolean"
+          },
+          "color": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "red",
+                  "orange",
+                  "yellow",
+                  "green",
+                  "teal",
+                  "blue",
+                  "purple",
+                  "pink",
+                  "gray"
+                ]
+              },
+              {
+                "type": "string",
+                "pattern": "^#[0-9a-fA-F]{6}$"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "label"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "name",
+    "groups",
+    "nodes",
+    "edges"
+  ],
+  "additionalProperties": false
+}

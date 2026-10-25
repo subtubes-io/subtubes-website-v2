@@ -1,0 +1,102 @@
+/* Default theme for @subtubes/diagram-react: every CSS variable the canvas reads, for a light and a dark theme. A host that has its own theme
+   defines these itself (the Subtubes app does, in src/index.css) and does not import this file. Dark applies with data-theme="dark" on the
+   root element, or when the system prefers dark and nothing is set. */
+:root {
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+:root,
+:root[data-theme='light'] {
+  color-scheme: light;
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #f0f2f5;
+  --border: #dfe3e8;
+  --text: #14171a;
+  --muted: #667085;
+  --accent: #2563eb;
+  --dot: #cfd5dd;
+  --group-bg: rgba(15, 23, 42, 0.03);
+  --node-bg: #ffffff;
+  --node-shadow: 0 1px 2px rgba(16, 24, 40, 0.08), 0 4px 12px rgba(16, 24, 40, 0.06);
+  --edge: #3b82f6;
+  --edge-dashed: #8a94a6;
+  --edge-optional: #8b5cf6;
+  --ok: #059669;
+  --tools: #d97706;
+  --danger: #dc2626;
+  --node-default: #94a3b8;
+  --c-red: #dc2626;
+  --c-orange: #d97706;
+  --c-yellow: #ca8a04;
+  --c-green: #059669;
+  --c-teal: #0d9488;
+  --c-blue: #2563eb;
+  --c-purple: #7c3aed;
+  --c-pink: #db2777;
+  --c-gray: #64748b;
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #161718;
+  --surface: #1f2022;
+  --surface-2: #2a2b2e;
+  --border: #35373b;
+  --text: #e8eaed;
+  --muted: #9aa0a8;
+  --accent: #3b82f6;
+  --dot: #2c2e31;
+  --group-bg: rgba(255, 255, 255, 0.03);
+  --node-bg: #262729;
+  --node-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
+  --edge: #38a1e8;
+  --edge-dashed: #7d8590;
+  --edge-optional: #a78bfa;
+  --ok: #34d399;
+  --tools: #fbbf24;
+  --danger: #f87171;
+  --node-default: #64748b;
+  --c-red: #f87171;
+  --c-orange: #fbbf24;
+  --c-yellow: #facc15;
+  --c-green: #34d399;
+  --c-teal: #2dd4bf;
+  --c-blue: #60a5fa;
+  --c-purple: #a78bfa;
+  --c-pink: #f472b6;
+  --c-gray: #94a3b8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    color-scheme: dark;
+    --bg: #161718;
+    --surface: #1f2022;
+    --surface-2: #2a2b2e;
+    --border: #35373b;
+    --text: #e8eaed;
+    --muted: #9aa0a8;
+    --accent: #3b82f6;
+    --dot: #2c2e31;
+    --group-bg: rgba(255, 255, 255, 0.03);
+    --node-bg: #262729;
+    --node-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
+    --edge: #38a1e8;
+    --edge-dashed: #7d8590;
+    --edge-optional: #a78bfa;
+    --ok: #34d399;
+    --tools: #fbbf24;
+    --danger: #f87171;
+    --node-default: #64748b;
+    --c-red: #f87171;
+    --c-orange: #fbbf24;
+    --c-yellow: #facc15;
+    --c-green: #34d399;
+    --c-teal: #2dd4bf;
+    --c-blue: #60a5fa;
+    --c-purple: #a78bfa;
+    --c-pink: #f472b6;
+    --c-gray: #94a3b8;
+  }
+}
