@@ -4,6 +4,7 @@ import type { ProfileLinks } from "@/lib/profile-links";
 export interface Database {
   account: AccountTable;
   blob: BlobTable;
+  contactMessage: ContactMessageTable;
   deviceCode: DeviceCodeTable;
   invitation: InvitationTable;
   llmAccount: LlmAccountTable;
@@ -44,6 +45,14 @@ interface AccountTable {
   password: string | null;
   createdAt: Generated<Date>;
   updatedAt: Date;
+}
+
+interface ContactMessageTable {
+  id: Generated<string>;
+  name: string;
+  email: string;
+  message: string;
+  createdAt: Generated<Date>;
 }
 
 interface DeviceCodeTable {

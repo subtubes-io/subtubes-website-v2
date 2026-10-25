@@ -3,12 +3,13 @@ import { billingConfigured } from "@/lib/billing/stripe";
 import { auth } from "@/lib/auth";
 import { isTrustedAuthOrigin } from "@/lib/auth-origins";
 import { createMembershipCheckout } from "@/lib/membership/membership";
+import { isMembershipInterval } from "@/lib/membership/plan";
 import { getRateLimiter } from "@/lib/rate-limit";
 import { RATE_LIMITS } from "@/lib/rate-limit/policy";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
-// Starts a Stripe Checkout for the $10 monthly membership and returns its URL.
+// Starts a Stripe Checkout for the monthly or yearly membership (`{ interval: "month" | "year" }`) and returns its URL.
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: request.headers });
   if (!session) return Response.json({ error: "Sign in first." }, { status: 401, headers: NO_STORE });
@@ -21,8 +22,12 @@ export async function POST(request: Request) {
   if (!limit.allowed) {
     return Response.json({ error: "Too many attempts. Try again later." }, { status: 429, headers: { ...NO_STORE, "Retry-After": String(limit.retryAfterSeconds) } });
   }
+  const body = await request.json().catch(() => null) as { interval?: unknown } | null;
+  if (!isMembershipInterval(body?.interval)) {
+    return Response.json({ error: "Choose monthly or yearly." }, { status: 400, headers: NO_STORE });
+  }
   try {
-    return Response.json({ url: await createMembershipCheckout(session.user) }, { headers: NO_STORE });
+    return Response.json({ url: await createMembershipCheckout(session.user, body.interval) }, { headers: NO_STORE });
   } catch (error) {
     if (error instanceof BillingError) return Response.json({ error: error.message }, { status: 400, headers: NO_STORE });
     console.error("Unable to start membership checkout", error instanceof Error ? error.message : "Unknown error");

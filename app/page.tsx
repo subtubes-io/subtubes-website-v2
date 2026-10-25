@@ -1,10 +1,13 @@
 import Link from "next/link";
-import { Check } from "lucide-react";
 import { Suspense } from "react";
+import { PricingCards } from "@/components/pricing-cards";
+import { VideoCarousel } from "@/components/video-carousel";
+import { loadVideos } from "@/lib/videos";
 import { NewsletterSignup } from "@/components/newsletter-signup";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { getMembership } from "@/lib/membership/membership";
-import { hasMembership, MEMBERSHIP_PRICE_USD } from "@/lib/membership/plan";
+import { hasMembership } from "@/lib/membership/plan";
 import { getSession } from "@/lib/session";
 
 async function HeroActions() {
@@ -20,14 +23,24 @@ async function HeroActions() {
   );
 }
 
-async function MembershipAction() {
+async function MembershipAction({ label }: { label: string }) {
   const session = await getSession();
   const member = session ? hasMembership((await getMembership(session.user.id))?.status) : false;
   if (member) return <Link href="/dashboard/membership" className="button-secondary">Manage membership</Link>;
   return (
     <Link href={session ? "/dashboard/membership" : "/sign-up?next=/dashboard/membership"} className="button-primary">
-      Become a member
+      {label}
     </Link>
+  );
+}
+
+async function Videos() {
+  const videos = await loadVideos();
+  if (videos.length === 0) return null;
+  return (
+    <section className="videos" aria-label="Videos">
+      <VideoCarousel videos={videos} />
+    </section>
   );
 }
 
@@ -53,23 +66,18 @@ export default function Home() {
         </div>
       </section>
 
+      <Suspense fallback={null}>
+        <Videos />
+      </Suspense>
+
       <section className="pricing" aria-labelledby="pricing-title">
         <h2 id="pricing-title" className="pricing-heading">Simple pricing</h2>
-        <p className="pricing-subheading">One plan. No annual commitment.</p>
-        <div className="pricing-card">
-          <div>
-            <p className="pricing-plan">Membership</p>
-            <p className="pricing-price">${MEMBERSHIP_PRICE_USD}<span> / month</span></p>
-          </div>
-          <ul className="pricing-list">
-            <li><Check size={16} aria-hidden="true" /> Full access to Subtubes</li>
-            <li><Check size={16} aria-hidden="true" /> Billed monthly</li>
-            <li><Check size={16} aria-hidden="true" /> Cancel any time</li>
-          </ul>
+        <p className="pricing-subheading">One membership. Pay monthly or save with a yearly plan.</p>
+        <PricingCards action={(label) => (
           <Suspense fallback={<span className="button-primary">Loading...</span>}>
-            <MembershipAction />
+            <MembershipAction label={label} />
           </Suspense>
-        </div>
+        )} />
       </section>
 
       <section className="feature-strip" aria-label="Platform features">
@@ -99,9 +107,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="site-footer">
-        <span>Subtubes</span>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

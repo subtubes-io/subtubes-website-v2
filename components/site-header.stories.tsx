@@ -17,6 +17,8 @@ export const Default: Story = {
     const canvas = within(canvasElement);
     await expect(canvas.getByRole("navigation", { name: "Main navigation" })).toBeVisible();
     await expect(canvas.getByRole("link", { name: "Subtubes home" })).toHaveAttribute("href", "/");
+    await expect(canvas.getByRole("link", { name: "Pricing" })).toHaveAttribute("href", "/pricing");
+    await expect(canvas.getByRole("link", { name: "Contact" })).toHaveAttribute("href", "/contact");
     await expect(canvas.getByRole("link", { name: "Get started" })).toHaveAttribute("href", "/sign-up");
   },
 };

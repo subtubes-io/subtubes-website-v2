@@ -15,6 +15,8 @@ export const RATE_LIMITS = {
   llmKeyCreation: (): RateLimitRule => ({ limit: 20, windowSeconds: 3600 }),
   /** Checkout and portal sessions per person per hour. */
   billingSessions: (): RateLimitRule => ({ limit: 30, windowSeconds: 3600 }),
+  /** Contact form messages per IP per hour. */
+  contactMessages: (): RateLimitRule => ({ limit: 5, windowSeconds: 3600 }),
   /** Newsletter signups per IP per hour. */
   newsletterSignup: (): RateLimitRule => ({ limit: 10, windowSeconds: 3600 }),
 } as const;

@@ -4,7 +4,7 @@ import { db } from "@/lib/db/client";
 import type { Database } from "@/lib/db/types";
 import { BillingError } from "@/lib/billing/billing";
 import { stripe } from "@/lib/billing/stripe";
-import { hasMembership, MEMBERSHIP_PRICE_DATA } from "./plan";
+import { hasMembership, membershipPriceData, type MembershipInterval } from "./plan";
 
 export function getMembership(userId: string) {
   return db.selectFrom("membership").selectAll().where("userId", "=", userId).executeTakeFirst();
@@ -22,21 +22,21 @@ async function ensureCustomer(userId: string, email: string, name: string): Prom
   return (await getMembership(userId))!.stripeCustomerId;
 }
 
-export async function createMembershipCheckout(user: { id: string; email: string; name: string }): Promise<string> {
+export async function createMembershipCheckout(user: { id: string; email: string; name: string }, interval: MembershipInterval): Promise<string> {
   if (hasMembership((await getMembership(user.id))?.status)) throw new BillingError("You are already a member. Manage it from the billing portal.");
   const customer = await ensureCustomer(user.id, user.email, user.name);
   const session = await stripe().checkout.sessions.create({
     mode: "subscription",
     customer,
     client_reference_id: user.id,
-    line_items: [{ quantity: 1, price_data: MEMBERSHIP_PRICE_DATA }],
-    metadata: { kind: "membership", userId: user.id },
+    line_items: [{ quantity: 1, price_data: membershipPriceData(interval) }],
+    metadata: { kind: "membership", userId: user.id, interval },
     subscription_data: { metadata: { kind: "membership", userId: user.id } },
     success_url: `${pageUrl()}?checkout=success`,
     cancel_url: `${pageUrl()}?checkout=cancelled`,
   }, {
     // Repeated clicks within half an hour reuse one checkout instead of opening several that could each start a subscription.
-    idempotencyKey: `membership-checkout-${user.id}-${Math.floor(Date.now() / 1_800_000)}`,
+    idempotencyKey: `membership-checkout-${user.id}-${interval}-${Math.floor(Date.now() / 1_800_000)}`,
   });
   if (!session.url) throw new Error("Stripe did not return a checkout URL");
   return session.url;

@@ -2,7 +2,7 @@ import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { MembershipAction } from "@/components/membership-actions";
 import { getMembership } from "@/lib/membership/membership";
-import { hasMembership, MEMBERSHIP_PRICE_USD } from "@/lib/membership/plan";
+import { hasMembership, ANNUAL_SAVINGS_USD, MEMBERSHIP_PRICES_USD } from "@/lib/membership/plan";
 import { getSession } from "@/lib/session";
 
 type Search = Promise<{ checkout?: string | string[] }>;
@@ -30,7 +30,6 @@ async function Membership({ searchParams }: { searchParams: Search }) {
           <>
             <h2 className="dashboard-section-title">You&apos;re a member</h2>
             <p className="dashboard-empty">
-              ${MEMBERSHIP_PRICE_USD} a month.{" "}
               {membership?.currentPeriodEnd && (membership.cancelAtPeriodEnd
                 ? `Ends on ${date(membership.currentPeriodEnd)}.`
                 : `Renews on ${date(membership.currentPeriodEnd)}.`)}
@@ -41,8 +40,11 @@ async function Membership({ searchParams }: { searchParams: Search }) {
         ) : (
           <>
             <h2 className="dashboard-section-title">Subtubes membership</h2>
-            <p className="dashboard-empty">${MEMBERSHIP_PRICE_USD} a month. Cancel any time.</p>
-            <MembershipAction action="checkout">{`Become a member for $${MEMBERSHIP_PRICE_USD}/month`}</MembershipAction>
+            <p className="dashboard-empty">Choose how you want to pay. Cancel any time.</p>
+            <div className="membership-choices">
+              <MembershipAction action="checkout" interval="month">{`Monthly, $${MEMBERSHIP_PRICES_USD.month}/month`}</MembershipAction>
+              <MembershipAction action="checkout" interval="year" variant="secondary">{`Yearly, $${MEMBERSHIP_PRICES_USD.year}/year (save $${ANNUAL_SAVINGS_USD})`}</MembershipAction>
+            </div>
           </>
         )}
       </section>
