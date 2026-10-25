@@ -48,7 +48,6 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
         <span>Subtubes</span>
       </Link>
       <nav className="site-nav" aria-label="Main navigation">
-        <Link href="/api-page" className="nav-api">API</Link>
         <ThemeSwitcher />
         {loading ? <span role="status" className="header-loading">Loading account...</span> :
           user ? (
@@ -79,7 +78,7 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
                     <p className="account-email">{user.email}</p>
                     <Link href="/dashboard/account" onClick={() => setOpen(false)}>Account</Link>
                     <Link href="/dashboard/profile" onClick={() => setOpen(false)}>Profile</Link>
-                    <Link href="/dashboard" onClick={() => setOpen(false)}>Organizations</Link>
+                    <Link href="/dashboard" onClick={() => setOpen(false)}>Dashboard</Link>
                     <button type="button" disabled={signingOut} onClick={onSignOut}>
                       {signingOut ? "Signing out..." : "Sign out"}
                     </button>

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "subtubes",
-  description: "Your Subtubes account and organizations, together in one place.",
+  description: "Your Subtubes account, in one place.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

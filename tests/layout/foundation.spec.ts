@@ -6,7 +6,7 @@ test("public foundation landing page", async ({ page }, testInfo) => {
   await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
   await expect(page.getByRole("link", { name: "Sign in", exact: true }).first()).toBeVisible();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your account.Your organizations.");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your account.Your dashboard.");
   await expect(page.locator("main")).not.toContainText(/reports|diagrams|designs|publish|sync/i);
   await page.evaluate(() => document.fonts.ready);
   const path = testInfo.outputPath("landing.png");

@@ -1,5 +1,5 @@
-import { ApiError, handle, json } from "@/lib/pull-request-reports/errors";
-import { authorize, canManage } from "@/lib/pull-request-reports/http";
+import { ApiError, handle, json } from "@/lib/api-v1/errors";
+import { authorize, canManage } from "@/lib/api-v1/http";
 import { countActiveKeys, createApiKey, listApiKeys, MAX_KEYS_PER_MEMBER, normalizeLabel } from "@/lib/llm/keys";
 import { getRateLimiter } from "@/lib/rate-limit";
 import { RATE_LIMITS } from "@/lib/rate-limit/policy";

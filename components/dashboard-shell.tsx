@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
-import { useParams, usePathname } from "next/navigation";
-import { FileText, PanelLeftClose, PanelLeftOpen, Users } from "lucide-react";
+import { usePathname } from "next/navigation";
+import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings, UserRound } from "lucide-react";
 
 const storageKey = "subtubes-org-drawer";
 const drawerEvent = "subtubes-org-drawer-change";
@@ -31,17 +31,16 @@ function subscribe(onChange: () => void) {
 }
 
 const pages = [
-  { name: "Users", path: "users", Icon: Users },
-  { name: "Reports", path: "reports", Icon: FileText },
+  { name: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { name: "Account", href: "/dashboard/account", Icon: Settings },
+  { name: "Profile", href: "/dashboard/profile", Icon: UserRound },
 ] as const;
 
-// The organization's pages: a drawer on the left that collapses, and the chosen page beside it.
-export function OrganizationShell({ children }: { children: ReactNode }) {
-  const { slug } = useParams<{ slug: string }>();
+// The signed-in person's pages: a drawer on the left that collapses, and the chosen page beside it.
+export function DashboardShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const drawer = useSyncExternalStore(subscribe, snapshot, () => "open" as Drawer);
   const open = drawer === "open";
-  const base = `/dashboard/organizations/${encodeURIComponent(slug)}`;
 
   function toggle() {
     try {
@@ -54,14 +53,13 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
 
   return (
     <div className={`org-shell${open ? "" : " org-shell-closed"}`}>
-      <aside id="organization-drawer" className="org-drawer" aria-label="Organization" hidden={!open}>
-        <nav aria-label="Organization pages">
+      <aside id="dashboard-drawer" className="org-drawer" aria-label="Dashboard" hidden={!open}>
+        <nav aria-label="Dashboard pages">
           <ul>
-            {pages.map(({ name, path, Icon }) => {
-              const href = `${base}/${path}`;
-              const current = pathname === href || pathname.startsWith(`${href}/`);
+            {pages.map(({ name, href, Icon }) => {
+              const current = href === "/dashboard" ? pathname === href : pathname === href || pathname.startsWith(`${href}/`);
               return (
-                <li key={path}>
+                <li key={href}>
                   <Link href={href} className="org-drawer-link" aria-current={current ? "page" : undefined}>
                     <Icon size={16} aria-hidden="true" />
                     {name}
@@ -70,11 +68,10 @@ export function OrganizationShell({ children }: { children: ReactNode }) {
               );
             })}
           </ul>
-          <Link href="/dashboard" className="org-drawer-back">All organizations</Link>
         </nav>
       </aside>
       <div className="org-content">
-        <button type="button" className="org-drawer-toggle" aria-expanded={open} aria-controls="organization-drawer"
+        <button type="button" className="org-drawer-toggle" aria-expanded={open} aria-controls="dashboard-drawer"
           aria-label={open ? "Close the menu" : "Open the menu"} title={open ? "Close the menu" : "Open the menu"} onClick={toggle}>
           {open ? <PanelLeftClose size={18} aria-hidden="true" /> : <PanelLeftOpen size={18} aria-hidden="true" />}
         </button>

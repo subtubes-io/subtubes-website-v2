@@ -1,5 +1,5 @@
 import { Kysely, sql } from "kysely";
-import { repositoryKey } from "../lib/pull-request-reports/repository-key";
+import { repositoryKey } from "./helpers/repository-key";
 
 // Reports are filed under the repository they are for, so a project reads the reports of its own git remote. The key is `host/owner/repo`
 // (see lib/pull-request-reports/repository-key.ts), worked out from the remote the report was published with. A report that was filed before

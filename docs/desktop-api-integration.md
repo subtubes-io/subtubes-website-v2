@@ -1,8 +1,6 @@
 # Desktop authentication integration
 
-The desktop app can authenticate, read the signed-in user's organizations, and
-publish pull-request reports to them (see
-[pull-request-reports-api.md](pull-request-reports-api.md)). Design, review,
+The desktop app can authenticate, and read the signed-in user's organizations. Design, review,
 inbox, upload, and synchronization APIs are not available.
 
 ## Device sign-in

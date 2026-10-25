@@ -1,5 +1,5 @@
-import { ApiError, handle } from "@/lib/pull-request-reports/errors";
-import { authorize, canManage } from "@/lib/pull-request-reports/http";
+import { ApiError, handle } from "@/lib/api-v1/errors";
+import { authorize, canManage } from "@/lib/api-v1/http";
 import { revokeApiKey } from "@/lib/llm/keys";
 
 // Revokes a key (the desktop app does this on sign-out). Owners and admins may revoke any key in the organization.

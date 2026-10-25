@@ -1,18 +1,13 @@
-// Every failure of the pull-request report API is `{ error, message, details? }` with `Cache-Control: no-store`, as the desktop contract
-// (src/pullRequests/remote/contract.ts) defines. `error` is for the app to act on and never changes meaning; `message` is for a person.
+// Every failure of the bearer-token API under /api/v1 is `{ error, message, details? }` with `Cache-Control: no-store`. `error` is for the app
+// to act on and never changes meaning; `message` is for a person.
 
 export const ERROR_STATUS = {
   "bad-request": 400,
   unauthorized: 401,
   forbidden: 403,
   "organization-not-found": 404,
-  "report-not-found": 404,
-  "key-not-found": 404,
-  "idempotency-conflict": 409,
   "payload-too-large": 413,
-  "unsupported-media-type": 415,
-  "invalid-report": 422,
-  "unsupported-schema-version": 422,
+  "key-not-found": 404,
   "rate-limited": 429,
   internal: 500,
   unavailable: 503,
@@ -22,9 +17,7 @@ export type ErrorCode = keyof typeof ERROR_STATUS;
 
 export interface ErrorDetails {
   issues?: { path: string; message: string }[];
-  supported?: number[];
   retryAfterSeconds?: number;
-  limitBytes?: number;
 }
 
 export class ApiError extends Error {
@@ -56,8 +49,7 @@ export async function handle(run: () => Promise<Response>): Promise<Response> {
     return await run();
   } catch (error) {
     if (error instanceof ApiError) return errorResponse(error);
-    // Never log the request: it holds source code.
-    console.error("Pull-request report request failed", error instanceof Error ? error.message : "Unknown error");
-    return errorResponse(new ApiError("internal", "Something went wrong. Nothing was stored."));
+    console.error("API request failed", error instanceof Error ? error.message : "Unknown error");
+    return errorResponse(new ApiError("internal", "Something went wrong."));
   }
 }

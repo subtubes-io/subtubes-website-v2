@@ -25,11 +25,10 @@ export default function Home() {
           <p className="eyebrow"><span className="eyebrow-dot" /> Subtubes</p>
           <h1 className="hero-title">
             Your account.
-            <span>Your organizations.</span>
+            <span>Your dashboard.</span>
           </h1>
           <p className="hero-description">
-            Manage your Subtubes account, organize your team, and connect your
-            desktop app securely.
+            Manage your Subtubes account and connect your desktop app securely.
           </p>
           <div className="hero-actions">
             <Suspense fallback={<span className="button-primary">Loading...</span>}>
@@ -46,8 +45,8 @@ export default function Home() {
             <p className="feature-description">Manage your account details, avatar, and profile links.</p>
           </article>
           <article className="feature-item">
-            <h2 className="feature-title">Your team</h2>
-            <p className="feature-description">Create organizations, invite members, and manage access.</p>
+            <h2 className="feature-title">Your dashboard</h2>
+            <p className="feature-description">See your own dashboard, and nothing else.</p>
           </article>
           <article className="feature-item">
             <h2 className="feature-title">Desktop sign-in</h2>

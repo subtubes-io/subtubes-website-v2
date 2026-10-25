@@ -3,12 +3,12 @@
 Next.js (App Router), TypeScript, Tailwind CSS, PostgreSQL with Kysely, and
 [Better Auth](https://www.better-auth.com). The app provides accounts,
 organizations, memberships/invitations, profiles, desktop device sign-in, and
-the pull-request report API the desktop app publishes to. Blob storage is
+and the bearer-token API for the desktop app. Blob storage is
 retained for avatars and future application features.
 
 Design, review, inbox, upload, and synchronization APIs are not available.
 Organizations, authentication, desktop sign-in, avatar storage,
-[pull-request reports](docs/pull-request-reports-api.md), and the
+and the
 [AI API](docs/llm-api.md) (an OpenRouter proxy with budgets and Stripe billing)
 are supported.
 
