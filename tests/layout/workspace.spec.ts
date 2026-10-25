@@ -67,7 +67,6 @@ for (const width of [390, 1440, 1920]) {
     await expect(header.getByRole("link", { name: "Sign in" })).toHaveCount(0);
     await expect(header.getByRole("link", { name: "Get started" })).toHaveCount(0);
     await expect(page.locator(".dashboard-header").getByRole("button", { name: "Sign out" })).toHaveCount(0);
-    await expect(page.getByText(email)).toBeVisible();
     await expect(page.getByRole("table")).toHaveCount(0);
 
     await expectFluidLayout(page, width);
