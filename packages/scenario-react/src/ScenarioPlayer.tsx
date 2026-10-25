@@ -16,6 +16,8 @@ export interface ScenarioPlayerConfig {
   // Shows a delete button for the open scenario and calls this when it is pressed. The host asks for confirmation and
   // removes the scenario (`removeScenario` on the store); without it there is no button.
   onDelete?: (scenario: Scenario) => void
+  // Whether the header has a button that closes the player. On unless false; a host that always shows the player turns it off.
+  closable?: boolean
 }
 
 const Close = ({ size }: { size: number }) => (
@@ -27,7 +29,7 @@ const Close = ({ size }: { size: number }) => (
 // The scenario player: pick a scenario and watch it play out. It reads and writes only the simulation store; what lights
 // up on the diagram, and anything about comments or deleting, is up to the host.
 export function ScenarioPlayer({ config = {} }: { config?: ScenarioPlayerConfig }) {
-  const { height, resizer, trace, footer, onDelete } = config
+  const { height, resizer, trace, footer, onDelete, closable = true } = config
   const store = useSimStore()
   const open = useSim((s) => s.panelOpen)
   const scenarios = useSim((s) => s.scenarios)
@@ -72,9 +74,11 @@ export function ScenarioPlayer({ config = {} }: { config?: ScenarioPlayerConfig 
           <input type="checkbox" checked={focusMode} onChange={(e) => setFocusMode(e.target.checked)} />
           Focus
         </label>
-        <button className="icon-btn" type="button" onClick={closePanel} aria-label="Close scenario player">
-          <Close size={16} />
-        </button>
+        {closable && (
+          <button className="icon-btn" type="button" onClick={closePanel} aria-label="Close scenario player">
+            <Close size={16} />
+          </button>
+        )}
       </header>
 
       {issues.length > 0 && !issuesHidden && (

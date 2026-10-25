@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useStore } from "zustand";
 import { DiagramViewer } from "@subtubes/diagram-react";
 import "@subtubes/diagram-react/diagram.css";
 import { ScenarioPlayer, SimulationContext, createSimulationStore } from "@subtubes/scenario-react";
@@ -15,9 +16,17 @@ export function ChallengeDesign({ design }: { design: { diagram: unknown; scenar
     const created = createSimulationStore(() => ({ nodes: diagram.nodes, edges: diagram.edges }));
     created.getState().registerScenarios(design.scenarios);
     created.getState().openPanel();
+    // Everything is shown at full strength until the first play; then the player fades what a step does not touch.
+    created.getState().setFocusMode(false);
+    const unsubscribe = created.subscribe((state) => {
+      if (state.runId === 0) return;
+      unsubscribe();
+      state.setFocusMode(true);
+    });
     return created;
   }, [diagram, design.scenarios]);
   const [highlights, setHighlights] = useState<Highlights | undefined>();
+  const focus = useStore(store, (state) => state.focusMode);
 
   useEffect(() => {
     const show = (state: ReturnType<typeof store.getState>) =>
@@ -29,15 +38,13 @@ export function ChallengeDesign({ design }: { design: { diagram: unknown; scenar
   return (
     <div className="challenge-design">
       <section aria-label={`Diagram: ${diagram.name}`}>
-        <h2 className="dashboard-section-title">Diagram</h2>
         <div className="challenge-diagram">
-          <DiagramViewer config={{ diagram, highlights, focus: true }} />
+          <DiagramViewer config={{ diagram, highlights, focus }} />
         </div>
       </section>
       <section aria-label="Scenarios">
-        <h2 className="dashboard-section-title">Scenario</h2>
         <SimulationContext.Provider value={store}>
-          <ScenarioPlayer />
+          <ScenarioPlayer config={{ closable: false }} />
         </SimulationContext.Provider>
       </section>
     </div>
