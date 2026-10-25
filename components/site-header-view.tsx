@@ -5,6 +5,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { FormError } from "@/components/ui/form-error";
 import { ThemeSwitcher } from "@/components/theme-switcher";
+import { LIGHT_MODE_ENABLED } from "@/lib/theme";
 
 export type HeaderUser = { name: string; email: string; image?: string | null };
 
@@ -48,7 +49,7 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
         <span>Subtubes</span>
       </Link>
       <nav className="site-nav" aria-label="Main navigation">
-        <ThemeSwitcher />
+        {LIGHT_MODE_ENABLED && <ThemeSwitcher />}
         {loading ? <span role="status" className="header-loading">Loading account...</span> :
           user ? (
             <>

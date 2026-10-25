@@ -134,22 +134,21 @@ test("avatar updates profile and header with a simulated storage response", asyn
   await testInfo.attach("saved-avatar", { path, contentType: "image/png" });
 });
 
-test("profile avatar fits mobile in light mode", async ({ page }, testInfo) => {
+test("profile avatar fits mobile in dark mode", async ({ page }, testInfo) => {
   await page.request.post("/api/auth/sign-in/email", { data: { email, password } });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/dashboard/profile");
   await expect(page.getByRole("button", { name: "Account menu for Avatar review" })).toBeVisible();
-  await page.getByRole("switch", { name: "Dark mode" }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await expect(page.locator(".profile-avatar-section")).toHaveCSS("flex-direction", "row");
   await expect(page.locator(".profile-card")).toBeVisible();
   await expect(page.getByRole("button", { name: "Save links" })).toHaveCSS("height", "28px");
   await expect(page.getByRole("button", { name: "Save links" })).toHaveCSS("width", `${await page.locator(".profile-links-form").evaluate((element) => element.clientWidth)}px`);
   await expect.poll(async () => (await page.locator(".profile-card").boundingBox())?.height ?? Infinity).toBeLessThan(540);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
-  const path = testInfo.outputPath("profile-mobile-light.png");
+  const path = testInfo.outputPath("profile-mobile-dark.png");
   await page.screenshot({ path, fullPage: true });
-  await testInfo.attach("profile-mobile-light", { path, contentType: "image/png" });
+  await testInfo.attach("profile-mobile-dark", { path, contentType: "image/png" });
   await page.getByRole("textbox", { name: "X", exact: true }).focus();
   await page.keyboard.press("Tab");
   await page.keyboard.press("Shift+Tab");
@@ -159,9 +158,9 @@ test("profile avatar fits mobile in light mode", async ({ page }, testInfo) => {
   await expect(page.getByRole("textbox", { name: "X", exact: true })).toHaveCSS("box-shadow", "none");
   await expect.poll(() => page.getByRole("textbox", { name: "X", exact: true }).evaluate((element) => getComputedStyle(element).borderColor))
     .not.toBe(await page.getByRole("textbox", { name: "LinkedIn", exact: true }).evaluate((element) => getComputedStyle(element).borderColor));
-  const focusedPath = testInfo.outputPath("profile-input-focused-light.png");
+  const focusedPath = testInfo.outputPath("profile-input-focused-dark.png");
   await page.screenshot({ path: focusedPath, fullPage: true, animations: "disabled" });
-  await testInfo.attach("profile-input-focused-light", { path: focusedPath, contentType: "image/png" });
+  await testInfo.attach("profile-input-focused-dark", { path: focusedPath, contentType: "image/png" });
 });
 
 test("avatar errors are visible and do not change the profile", async ({ page }) => {

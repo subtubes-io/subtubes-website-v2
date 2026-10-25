@@ -3,6 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import { Moon, Sun } from "lucide-react";
 import { FormError } from "@/components/ui/form-error";
+import { LIGHT_MODE_ENABLED } from "@/lib/theme";
 
 const storageKey = "subtubes-theme";
 const themeEvent = "subtubes-theme-change";
@@ -26,9 +27,11 @@ function subscribe(onChange: () => void) {
   };
 }
 
+// Only shown while LIGHT_MODE_ENABLED is on (lib/theme.ts); the site is dark only otherwise.
 export function ThemeSwitcher() {
   const theme = useSyncExternalStore(subscribe, snapshot, () => "dark");
   const [error, setError] = useState("");
+  if (!LIGHT_MODE_ENABLED) return null;
   return (
     <div className="theme-control">
       <button type="button" role="switch" className="theme-switcher"

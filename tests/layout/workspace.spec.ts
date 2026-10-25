@@ -81,41 +81,15 @@ for (const width of [390, 1440, 1920]) {
 }
 
 for (const width of [390, 1440]) {
-  test(`light and dark themes persist at ${width}px`, async ({ page, context }, testInfo) => {
+  test(`the site is dark only at ${width}px`, async ({ page }, testInfo) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    // A browser that saved the light theme before it was switched off must still get dark.
+    await page.addInitScript(() => localStorage.setItem("subtubes-theme", "light"));
     await page.setViewportSize({ width, height: 900 });
     const response = await page.request.post("/api/auth/sign-in/email", { data: { email, password } });
     expect(response.ok(), await response.text()).toBeTruthy();
-    await page.goto("/dashboard");
     const root = page.locator("html");
-    await expect(root).toHaveAttribute("data-theme", "dark");
-    const toggle = page.getByRole("switch", { name: "Dark mode", exact: true });
-    await expect(toggle).toBeChecked();
-    await expect(toggle).toHaveCSS("height", "28px");
-    await expect(toggle).toHaveCSS("width", "84px");
-    await expect(toggle.locator("svg.lucide-sun")).toHaveCSS("width", "18px");
-    await expect(toggle.locator("svg.lucide-moon")).toHaveCSS("width", "18px");
-    await toggle.focus();
-    await page.keyboard.press("Space");
-    await expect(toggle).not.toBeChecked();
-    await expect(root).toHaveAttribute("data-theme", "light");
-    await expect(root).toHaveCSS("color-scheme", "light");
-    await expect(page.locator("body")).toHaveCSS("background-color", "rgb(248, 250, 252)");
-    await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
-    await page.reload();
-    await expect(root).toHaveAttribute("data-theme", "light");
-    await expect(toggle).not.toBeChecked();
-    const secondTab = await context.newPage();
-    try {
-      await secondTab.goto("/dashboard");
-      await expect(secondTab.locator("html")).toHaveAttribute("data-theme", "light");
-      await toggle.click();
-      await expect(secondTab.locator("html")).toHaveAttribute("data-theme", "dark");
-      await toggle.click();
-    } finally {
-      await secondTab.close();
-    }
     for (const [route, name] of [
       ["/dashboard", "Dashboard"],
       ["/dashboard/account", "Account"],
@@ -130,31 +104,19 @@ for (const width of [390, 1440]) {
       await page.goto(route);
       if (route !== "/") await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
       else await expect(page.locator(".hero-title")).toBeVisible();
-      await expect(root).toHaveAttribute("data-theme", "light");
+      await expect(root).toHaveAttribute("data-theme", "dark");
+      await expect(root).toHaveCSS("color-scheme", "dark");
+      await expect(page.getByRole("switch", { name: "Dark mode" })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
       await page.evaluate(() => document.fonts.ready);
       const state = route === "/" ? "home" : route.split("/").pop()!;
-      const path = testInfo.outputPath(`${state}-light.png`);
+      const path = testInfo.outputPath(`${state}-dark.png`);
       await page.screenshot({ path, fullPage: true, animations: "disabled" });
-      await testInfo.attach(`${state}-light`, { path, contentType: "image/png" });
+      await testInfo.attach(`${state}-dark`, { path, contentType: "image/png" });
     }
-    await toggle.click();
-    await page.reload();
-    await expect(root).toHaveAttribute("data-theme", "dark");
     expect(errors).toEqual([]);
   });
 }
-
-test("theme switching reports blocked persistence and works when signed out", async ({ page }) => {
-  await page.addInitScript(() => {
-    Storage.prototype.setItem = () => { throw new Error("Storage disabled for test"); };
-  });
-  await page.goto("/sign-in");
-  await page.getByRole("switch", { name: "Dark mode", exact: true }).click();
-  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  await expect(page.getByRole("alert").filter({ hasText: "could not be saved" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Get started" })).toBeVisible();
-});
 
 test("API at 1440px", async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1440, height: 900 });
