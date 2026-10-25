@@ -1295,3 +1295,46 @@ input:focus-visible {
   overflow-wrap: anywhere;
   font-family: var(--font-code);
 }
+
+.newsletter {
+  border-bottom: 1px solid var(--line);
+}
+
+.newsletter-inner {
+  display: flex;
+  width: min(1120px, 100%);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin: 0 auto;
+  padding: 25px 28px;
+}
+
+.newsletter-form {
+  display: flex;
+  min-width: min(420px, 100%);
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.newsletter-form .field-label {
+  flex: 1;
+  min-width: 200px;
+}
+
+.newsletter-form .form-error {
+  width: 100%;
+}
+
+.newsletter-done {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .newsletter-inner {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

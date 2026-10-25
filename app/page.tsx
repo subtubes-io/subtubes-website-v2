@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Suspense } from "react";
+import { NewsletterSignup } from "@/components/newsletter-signup";
 import { SiteHeader } from "@/components/site-header";
 import { getSession } from "@/lib/session";
 
@@ -52,6 +53,16 @@ export default function Home() {
             <h2 className="feature-title">Desktop sign-in</h2>
             <p className="feature-description">Connect your desktop app securely with a short device code.</p>
           </article>
+        </div>
+      </section>
+
+      <section className="newsletter" aria-labelledby="newsletter-title">
+        <div className="newsletter-inner">
+          <div>
+            <h2 id="newsletter-title" className="feature-title">Newsletter</h2>
+            <p className="feature-description">Product updates from Subtubes, now and then.</p>
+          </div>
+          <NewsletterSignup />
         </div>
       </section>
 

@@ -15,6 +15,7 @@ export interface Database {
   llmOrgPeriod: LlmOrgPeriodTable;
   llmUsage: LlmUsageTable;
   member: MemberTable;
+  newsletterSubscriber: NewsletterSubscriberTable;
   organization: OrganizationTable;
   profileLinks: ProfileLinks & { userId: string };
   rateLimitCounter: RateLimitCounterTable;
@@ -95,6 +96,14 @@ interface SessionTable {
   userAgent: string | null;
   userId: string;
   activeOrganizationId: string | null;
+}
+
+interface NewsletterSubscriberTable {
+  email: string;
+  createdAt: Generated<Date>;
+  token: Generated<string>;
+  confirmedAt: Date | null;
+  confirmationSentAt: Generated<Date>;
 }
 
 interface UserTable {
