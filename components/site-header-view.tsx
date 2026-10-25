@@ -53,6 +53,7 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
         {loading ? <span role="status" className="header-loading">Loading account...</span> :
           user ? (
             <>
+              <Link href="/challenges" className="nav-challenges">Challenges</Link>
               <Link href="/contact" className="nav-contact">Contact</Link>
               <div className="account-menu" ref={container}
                 onBlur={(event) => {
@@ -91,6 +92,7 @@ export function SiteHeaderView({ config }: { config: HeaderConfig }) {
           ) : !error && (
             <>
               <Link href="/pricing" className="nav-pricing">Pricing</Link>
+              <Link href="/challenges" className="nav-challenges">Challenges</Link>
               <Link href="/contact" className="nav-contact">Contact</Link>
               <Link href="/sign-in" className="nav-sign-in">Sign in</Link>
               <Link href="/sign-up" className="nav-cta whitespace-nowrap">Get started</Link>
