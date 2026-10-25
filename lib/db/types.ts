@@ -15,6 +15,7 @@ export interface Database {
   llmOrgPeriod: LlmOrgPeriodTable;
   llmUsage: LlmUsageTable;
   member: MemberTable;
+  membership: MembershipTable;
   newsletterSubscriber: NewsletterSubscriberTable;
   organization: OrganizationTable;
   profileLinks: ProfileLinks & { userId: string };
@@ -96,6 +97,16 @@ interface SessionTable {
   userAgent: string | null;
   userId: string;
   activeOrganizationId: string | null;
+}
+
+interface MembershipTable {
+  userId: string;
+  stripeCustomerId: string;
+  stripeSubscriptionId: string | null;
+  status: Generated<string>;
+  currentPeriodEnd: Date | null;
+  cancelAtPeriodEnd: Generated<boolean>;
+  updatedAt: Generated<Date>;
 }
 
 interface NewsletterSubscriberTable {

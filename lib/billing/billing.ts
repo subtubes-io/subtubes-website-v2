@@ -4,6 +4,7 @@ import { sql, type Transaction } from "kysely";
 import { db } from "@/lib/db/client";
 import type { Database } from "@/lib/db/types";
 import { ensureAccount, getAccount, hasActiveSubscription } from "@/lib/llm/account";
+import { applyMembershipSubscription } from "@/lib/membership/membership";
 import { findPlan, findPlanByPrice, MAX_CREDIT_USD, MIN_CREDIT_USD, stripe } from "./stripe";
 
 type Trx = Transaction<Database>;
@@ -113,7 +114,8 @@ export async function handleStripeEvent(event: Stripe.Event): Promise<"handled" 
       case "customer.subscription.created":
       case "customer.subscription.updated":
       case "customer.subscription.deleted":
-        return (await applySubscription(trx, subscription!)) ? "handled" : "ignored";
+        return (await (subscription!.metadata?.kind === "membership" ? applyMembershipSubscription(trx, subscription!) : applySubscription(trx, subscription!)))
+          ? "handled" : "ignored";
       default:
         return "ignored";
     }

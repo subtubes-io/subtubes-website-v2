@@ -1296,23 +1296,105 @@ input:focus-visible {
   font-family: var(--font-code);
 }
 
+.pricing {
+  padding: 84px 28px 92px;
+  text-align: center;
+}
+
+.pricing-heading {
+  color: var(--foreground);
+  font-size: clamp(26px, 3vw, 34px);
+  font-weight: 680;
+  letter-spacing: -0.02em;
+}
+
+.pricing-subheading {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.pricing-card {
+  display: flex;
+  width: min(380px, 100%);
+  flex-direction: column;
+  gap: 22px;
+  margin: 36px auto 0;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 30px 28px 28px;
+  text-align: left;
+}
+
+.pricing-plan {
+  color: var(--muted);
+  font-family: var(--font-code), monospace;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.pricing-price {
+  margin-top: 8px;
+  color: var(--foreground);
+  font-size: 46px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.pricing-price span {
+  color: var(--muted);
+  font-size: 15px;
+  font-weight: 450;
+  letter-spacing: 0;
+}
+
+.pricing-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pricing-list li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pricing-list svg {
+  flex: none;
+  color: var(--accent);
+}
+
+.pricing-card .button-primary,
+.pricing-card .button-secondary {
+  width: 100%;
+  justify-content: center;
+}
+
 .newsletter {
-  border-bottom: 1px solid var(--line);
+  border-top: 1px solid var(--line);
 }
 
 .newsletter-inner {
   display: flex;
   width: min(1120px, 100%);
-  align-items: flex-end;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 32px;
   margin: 0 auto;
-  padding: 25px 28px;
+  padding: 36px 28px;
 }
 
 .newsletter-form {
   display: flex;
-  min-width: min(420px, 100%);
+  width: min(440px, 100%);
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
@@ -1329,7 +1411,7 @@ input:focus-visible {
 
 .newsletter-done {
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 @media (max-width: 720px) {

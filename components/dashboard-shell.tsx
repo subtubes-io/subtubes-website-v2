@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings, UserRound } from "lucide-react";
+import { CreditCard, LayoutDashboard, PanelLeftClose, PanelLeftOpen, Settings, UserRound } from "lucide-react";
 
 const storageKey = "subtubes-org-drawer";
 const drawerEvent = "subtubes-org-drawer-change";
@@ -32,6 +32,7 @@ function subscribe(onChange: () => void) {
 
 const pages = [
   { name: "Dashboard", href: "/dashboard", Icon: LayoutDashboard },
+  { name: "Membership", href: "/dashboard/membership", Icon: CreditCard },
   { name: "Account", href: "/dashboard/account", Icon: Settings },
   { name: "Profile", href: "/dashboard/profile", Icon: UserRound },
 ] as const;
