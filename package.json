@@ -34,7 +34,8 @@
     "rehype-highlight": "^7.0.2",
     "sharp": "^0.35.5",
     "stripe": "^23.0.0",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@playwright/test": "^1.56.0",

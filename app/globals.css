@@ -1730,3 +1730,16 @@ a.video-row { color: inherit; text-decoration: none; }
   cursor: pointer;
 }
 .code-copy:hover, .code-copy:focus-visible { color: var(--foreground); }
+
+/* The diagram and scenario packages read these variables; they are set here, for this block only, to the site's dark palette. */
+.challenge-design {
+  --bg: #111213; --surface: #191a1c; --surface-2: #202123; --border: #303235; --text: #f0f1f2; --muted: #999da2; --accent: #38bdf8; --accent-text: #08202c;
+  --dot: #2c2e31; --group-bg: rgba(255, 255, 255, 0.03); --node-bg: #202123;
+  --node-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.35);
+  --edge: #38a1e8; --edge-dashed: #7d8590; --edge-optional: #a78bfa; --ok: #34d399; --tools: #fbbf24; --danger: #f87171; --runtime: #a78bfa; --node-default: #64748b;
+  --c-red: #f87171; --c-orange: #fbbf24; --c-yellow: #facc15; --c-green: #34d399; --c-teal: #2dd4bf; --c-blue: #60a5fa; --c-purple: #a78bfa; --c-pink: #f472b6; --c-gray: #94a3b8;
+  --font: var(--font-body); --mono: var(--font-code);
+  display: flex; flex-direction: column; gap: 24px; margin-top: 16px; color: var(--text);
+}
+.challenge-diagram { display: flex; height: 560px; margin-top: 12px; overflow: hidden; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); }
+.challenge-design .sim-player { margin-top: 12px; }

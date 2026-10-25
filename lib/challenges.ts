@@ -1,3 +1,5 @@
+import type { Scenario } from "@subtubes/scenario-core";
+
 // Mock data for the challenges. Each challenge has one video, and its id is the page: /challenges/<id>. Replace with real videos once there is a source for categories and durations.
 export const CHALLENGE_CATEGORIES = ["Getting started", "Diagrams", "Code", "Scenarios", "Teams"] as const;
 export type ChallengeCategory = (typeof CHALLENGE_CATEGORIES)[number];
@@ -32,4 +34,11 @@ export async function loadChallengeMarkdown(id: string): Promise<string> {
   const { readFile } = await import("node:fs/promises");
   const { join } = await import("node:path");
   return readFile(join(process.cwd(), "content", "challenges", `${id}.md`), "utf8");
+}
+
+// The design shown under every challenge's video: design-example.json in the project root, until challenges have designs of their own.
+export async function loadChallengeDesign(): Promise<{ diagram: unknown; scenarios: Scenario[] }> {
+  const { readFile } = await import("node:fs/promises");
+  const { join } = await import("node:path");
+  return JSON.parse(await readFile(join(process.cwd(), "design-example.json"), "utf8"));
 }

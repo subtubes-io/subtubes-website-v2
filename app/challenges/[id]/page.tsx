@@ -6,10 +6,11 @@ import typescript from "highlight.js/lib/languages/typescript";
 import terraform from "@/lib/highlight-terraform";
 import { notFound } from "next/navigation";
 import { Play } from "lucide-react";
+import { ChallengeDesign } from "@/components/challenge-design";
 import { CodeBlock } from "@/components/code-block";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
-import { MOCK_CHALLENGES, findChallenge, loadChallengeMarkdown } from "@/lib/challenges";
+import { MOCK_CHALLENGES, findChallenge, loadChallengeDesign, loadChallengeMarkdown } from "@/lib/challenges";
 
 export function generateStaticParams() {
   return MOCK_CHALLENGES.map(({ id }) => ({ id }));
@@ -27,7 +28,7 @@ const HIGHLIGHT = { languages: { typescript, python, terraform }, aliases: { typ
 async function Challenge({ params }: { params: Promise<{ id: string }> }) {
   const challenge = findChallenge((await params).id);
   if (!challenge) notFound();
-  const markdown = await loadChallengeMarkdown(challenge.id);
+  const [markdown, design] = await Promise.all([loadChallengeMarkdown(challenge.id), loadChallengeDesign()]);
 
   return (
     <article className="challenges-page challenge-detail">
@@ -37,6 +38,7 @@ async function Challenge({ params }: { params: Promise<{ id: string }> }) {
       <div className="challenge-player" role="img" aria-label={`Video for ${challenge.title}`}>
         <Play size={40} fill="currentColor" aria-hidden="true" />
       </div>
+      <ChallengeDesign design={design} />
       <div className="markdown"><Markdown rehypePlugins={[[rehypeHighlight, HIGHLIGHT]]} components={{ pre: ({ children }) => <CodeBlock>{children}</CodeBlock> }}>{markdown}</Markdown></div>
     </article>
   );

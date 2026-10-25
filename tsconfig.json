@@ -19,7 +19,14 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@subtubes/diagram-core/versioning": ["./packages/diagram-core/src/versioning.ts"],
+      "@subtubes/diagram-core": ["./packages/diagram-core/src/index.ts"],
+      "@subtubes/diagram-react/diagram.css": ["./packages/diagram-react/src/diagram.css"],
+      "@subtubes/diagram-react": ["./packages/diagram-react/src/index.ts"],
+      "@subtubes/scenario-core": ["./packages/scenario-core/src/index.ts"],
+      "@subtubes/scenario-react/scenario.css": ["./packages/scenario-react/src/scenario.css"],
+      "@subtubes/scenario-react": ["./packages/scenario-react/src/index.ts"]
     }
   },
   "include": [
@@ -30,5 +37,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "packages/**/*.test.ts", "packages/**/testing"]
 }
